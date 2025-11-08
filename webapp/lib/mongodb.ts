@@ -15,9 +15,16 @@ export async function connectToDatabase() {
     return { client: cachedClient, db: cachedDb };
   }
 
-  console.warn('Connecting to MongoDB...: ' + uri);
-  const client = new MongoClient(uri);
+  console.log('Connecting to MongoDB with URI:', uri.replace(/\/\/([^:]+):([^@]+)@/, '//$1:****@'));
+  
+  const client = new MongoClient(uri, {
+    retryWrites: true,
+    w: 'majority',
+  });
+  
   await client.connect();
+  console.log('MongoDB connected successfully');
+  
   const db = client.db(dbName);
 
   cachedClient = client;
