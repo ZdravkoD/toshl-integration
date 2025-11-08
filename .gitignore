@@ -49,3 +49,4 @@ webapp/out/
 webapp/.vercel/
 webapp/*.tsbuildinfo
 webapp/next-env.d.ts
+.vercel
