@@ -1,0 +1,17 @@
+{
+  "store_categories": {
+    "AMAZON": "Shopping",
+    "WALMART": "Groceries",
+    "TARGET": "Shopping",
+    "STARBUCKS": "Coffee & Drinks",
+    "MCDONALD'S": "Food & Dining",
+    "SHELL": "Gas & Fuel",
+    "CHEVRON": "Gas & Fuel",
+    "UBER": "Transportation",
+    "NETFLIX": "Entertainment",
+    "SPOTIFY": "Entertainment",
+    "GYM": "Health & Fitness",
+    "PHARMACY": "Health & Fitness"
+  },
+  "default_category": "General"
+}
