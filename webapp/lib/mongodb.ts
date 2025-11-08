@@ -15,7 +15,7 @@ export async function connectToDatabase() {
     return { client: cachedClient, db: cachedDb };
   }
 
-  console.log('Connecting to MongoDB...: ' + uri);
+  console.warn('Connecting to MongoDB...: ' + uri);
   const client = new MongoClient(uri);
   await client.connect();
   const db = client.db(dbName);
