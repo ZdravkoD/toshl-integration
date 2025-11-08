@@ -16,6 +16,7 @@ export default function MappingsPage() {
   const [mappings, setMappings] = useState<StoreMapping[]>([]);
   const [storeName, setStoreName] = useState('');
   const [category, setCategory] = useState('');
+  const [commonCategories, setCommonCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -23,6 +24,7 @@ export default function MappingsPage() {
 
   useEffect(() => {
     fetchMappings();
+    fetchCommonCategories();
   }, []);
 
   useEffect(() => {
@@ -30,6 +32,21 @@ export default function MappingsPage() {
       setStoreName(store);
     }
   }, [store]);
+
+  const fetchCommonCategories = async () => {
+    try {
+      const response = await fetch('/api/getCommonCategories');
+      const data = await response.json();
+      
+      if (response.ok && data.categories) {
+        setCommonCategories(data.categories);
+      }
+    } catch (err) {
+      console.error('Failed to fetch common categories:', err);
+      // Fallback to default categories if API fails
+      setCommonCategories(['Groceries', 'Transportation', 'Entertainment', 'Shopping', 'Dining', 'Health', 'Bills', 'General']);
+    }
+  };
 
   const fetchMappings = async () => {
     setLoading(true);
@@ -205,23 +222,50 @@ export default function MappingsPage() {
 
         <div className={`${styles.card} ${styles.message} ${styles.info}`}>
           <strong>Common Toshl Categories:</strong>
+          <div style={{ marginTop: '0.5rem', marginBottom: '0.5rem', fontSize: '0.85rem', color: '#666' }}>
+            {commonCategories.length > 0 ? 'Click a category to use it (sorted by usage):' : 'Loading your most-used categories...'}
+          </div>
           <div style={{ marginTop: '0.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-            {['Groceries', 'Transportation', 'Entertainment', 'Shopping', 'Dining', 'Health', 'Bills', 'General'].map(cat => (
-              <button
-                key={cat}
-                onClick={() => setCategory(cat)}
-                style={{
-                  padding: '0.4rem 0.8rem',
-                  background: '#e0e0e0',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '0.85rem'
-                }}
-              >
-                {cat}
-              </button>
-            ))}
+            {commonCategories.length > 0 ? (
+              commonCategories.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setCategory(cat)}
+                  style={{
+                    padding: '0.4rem 0.8rem',
+                    background: category === cat ? '#0070f3' : '#e0e0e0',
+                    color: category === cat ? 'white' : 'black',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {cat}
+                </button>
+              ))
+            ) : (
+              ['Groceries', 'Transportation', 'Entertainment', 'Shopping', 'Dining', 'Health', 'Bills', 'General'].map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setCategory(cat)}
+                  style={{
+                    padding: '0.4rem 0.8rem',
+                    background: '#e0e0e0',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  {cat}
+                </button>
+              ))
+            )}
+          </div>
+          <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: '#999' }}>
+            💡 Run <code>syncToshlCategoriesToMongoDB()</code> in Google Apps Script to update this list with your actual Toshl categories
           </div>
         </div>
       </main>
