@@ -9,12 +9,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const { db } = await connectToDatabase();
 
-    // Get tags sorted by usage count (descending)
+    // Get all tags sorted by usage count (descending)
     const tags = await db
       .collection('toshl_tags')
       .find({})
       .sort({ usage_count: -1 })
-      .limit(20) // Get top 20 most used tags
       .toArray();
 
     // Return just the tag names
