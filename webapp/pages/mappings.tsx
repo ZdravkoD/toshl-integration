@@ -25,6 +25,10 @@ export default function MappingsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+  const [filteredTags, setFilteredTags] = useState<string[]>([]);
+  const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
+  const [filteredCategories, setFilteredCategories] = useState<string[]>([]);
 
   useEffect(() => {
     fetchMappings();
@@ -142,11 +146,27 @@ export default function MappingsPage() {
     if (trimmed && !tags.includes(trimmed)) {
       setTags([...tags, trimmed]);
       setTagInput('');
+      setShowTagSuggestions(false);
     }
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
     setTags(tags.filter(tag => tag !== tagToRemove));
+  };
+
+  const handleTagInputChange = (value: string) => {
+    setTagInput(value);
+    
+    // Filter tags that match the input and aren't already selected
+    const matches = value.trim()
+      ? commonTags.filter(tag => 
+          tag.toLowerCase().includes(value.toLowerCase()) && 
+          !tags.includes(tag)
+        )
+      : commonTags.filter(tag => !tags.includes(tag));
+    
+    setFilteredTags(matches);
+    setShowTagSuggestions(matches.length > 0);
   };
 
   const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -155,6 +175,32 @@ export default function MappingsPage() {
       handleAddTag(tagInput);
     } else if (e.key === 'Backspace' && !tagInput && tags.length > 0) {
       handleRemoveTag(tags[tags.length - 1]);
+    } else if (e.key === 'Escape') {
+      setShowTagSuggestions(false);
+    }
+  };
+
+  const handleCategoryInputChange = (value: string) => {
+    setCategory(value);
+    
+    const matches = value.trim()
+      ? commonCategories.filter(cat => 
+          cat.toLowerCase().includes(value.toLowerCase())
+        )
+      : commonCategories;
+    
+    setFilteredCategories(matches);
+    setShowCategorySuggestions(matches.length > 0);
+  };
+
+  const handleCategorySelect = (categoryName: string) => {
+    setCategory(categoryName);
+    setShowCategorySuggestions(false);
+  };
+
+  const handleCategoryKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      setShowCategorySuggestions(false);
     }
   };
 
@@ -212,15 +258,76 @@ export default function MappingsPage() {
               <label className={styles.label} htmlFor="category">
                 Toshl Category
               </label>
-              <input
-                id="category"
-                type="text"
-                className={styles.input}
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="e.g., Groceries, Transportation, Entertainment"
-                required
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  id="category"
+                  type="text"
+                  className={styles.input}
+                  value={category}
+                  onChange={(e) => handleCategoryInputChange(e.target.value)}
+                  onKeyDown={handleCategoryKeyDown}
+                  onFocus={() => {
+                    const matches = category.trim()
+                      ? commonCategories.filter(cat => 
+                          cat.toLowerCase().includes(category.toLowerCase())
+                        )
+                      : commonCategories;
+                    setFilteredCategories(matches);
+                    if (matches.length > 0) {
+                      setShowCategorySuggestions(true);
+                    }
+                  }}
+                  onBlur={() => {
+                    // Delay hiding to allow click on suggestions
+                    setTimeout(() => setShowCategorySuggestions(false), 200);
+                  }}
+                  placeholder="e.g., Groceries, Transportation, Entertainment"
+                  required
+                />
+                
+                {/* Autocomplete Dropdown */}
+                {showCategorySuggestions && filteredCategories.length > 0 && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    marginTop: '4px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    zIndex: 1000
+                  }}>
+                    {filteredCategories.map((cat) => (
+                      <div
+                        key={cat}
+                        onClick={() => handleCategorySelect(cat)}
+                        style={{
+                          padding: '10px 12px',
+                          cursor: 'pointer',
+                          borderBottom: '1px solid #e0e0e0',
+                          transition: 'background-color 0.2s',
+                          color: '#333',
+                          fontSize: '14px'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#e3f2fd';
+                          e.currentTarget.style.color = '#1976d2';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#ffffff';
+                          e.currentTarget.style.color = '#333';
+                        }}
+                      >
+                        {cat}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <small style={{ color: '#666', fontSize: '0.85rem' }}>
                 Enter the exact category name as it appears in Toshl Finance
               </small>
@@ -283,39 +390,104 @@ export default function MappingsPage() {
               )}
 
               {/* Tag Input */}
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  className={styles.input}
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={handleTagInputKeyDown}
-                  placeholder="Type a tag and press Enter"
-                  style={{ flex: 1 }}
-                />
-                <button
-                  type="button"
-                  onClick={() => handleAddTag(tagInput)}
-                  disabled={!tagInput.trim()}
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: tagInput.trim() ? '#2196F3' : '#ccc',
-                    color: 'white',
-                    border: 'none',
+              <div style={{ position: 'relative' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    className={styles.input}
+                    value={tagInput}
+                    onChange={(e) => handleTagInputChange(e.target.value)}
+                    onKeyDown={handleTagInputKeyDown}
+                    onFocus={() => {
+                      const matches = tagInput.trim()
+                        ? commonTags.filter(tag => 
+                            tag.toLowerCase().includes(tagInput.toLowerCase()) && 
+                            !tags.includes(tag)
+                          )
+                        : commonTags.filter(tag => !tags.includes(tag));
+                      setFilteredTags(matches);
+                      if (matches.length > 0) {
+                        setShowTagSuggestions(true);
+                      }
+                    }}
+                    onBlur={() => {
+                      // Delay hiding to allow click on suggestions
+                      setTimeout(() => setShowTagSuggestions(false), 200);
+                    }}
+                    placeholder="Type a tag and press Enter"
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddTag(tagInput)}
+                    disabled={!tagInput.trim()}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: tagInput.trim() ? '#2196F3' : '#ccc',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: tagInput.trim() ? 'pointer' : 'not-allowed',
+                      fontWeight: 500
+                    }}
+                  >
+                    Add Tag
+                  </button>
+                </div>
+
+                {/* Autocomplete Dropdown */}
+                {showTagSuggestions && filteredTags.length > 0 && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    marginTop: '4px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #ccc',
                     borderRadius: '4px',
-                    cursor: tagInput.trim() ? 'pointer' : 'not-allowed',
-                    fontWeight: 500
-                  }}
-                >
-                  Add Tag
-                </button>
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    zIndex: 1000
+                  }}>
+                    {filteredTags.map((tag) => (
+                      <div
+                        key={tag}
+                        onClick={() => handleAddTag(tag)}
+                        style={{
+                          padding: '10px 12px',
+                          cursor: 'pointer',
+                          borderBottom: '1px solid #e0e0e0',
+                          transition: 'background-color 0.2s',
+                          color: '#333',
+                          fontSize: '14px'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#e3f2fd';
+                          e.currentTarget.style.color = '#1976d2';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#ffffff';
+                          e.currentTarget.style.color = '#333';
+                        }}
+                      >
+                        {tag}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
             <button
               type="submit"
               className={styles.button}
-              disabled={submitting}
+              disabled={submitting || !storeName.trim() || !category.trim()}
+              style={{
+                opacity: (submitting || !storeName.trim() || !category.trim()) ? 0.6 : 1,
+                cursor: (submitting || !storeName.trim() || !category.trim()) ? 'not-allowed' : 'pointer'
+              }}
             >
               {submitting ? 'Adding...' : 'Add Mapping'}
             </button>
