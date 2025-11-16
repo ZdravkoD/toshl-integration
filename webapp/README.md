@@ -167,7 +167,7 @@ webapp/
 
 ## MongoDB Collections
 
-### store_collections
+### merchants
 ```javascript
 {
   store_name: "MR. BRICOLAGE SOFIA 3",

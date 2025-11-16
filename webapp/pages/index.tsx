@@ -54,7 +54,10 @@ export default function Home() {
             Pending Transactions ({pendingTransactions.length})
           </button>
           <button className={`${styles.navButton} ${styles.secondary}`} onClick={() => router.push('/mappings')}>
-            Store Mappings
+            + Add Mapping
+          </button>
+          <button className={`${styles.navButton} ${styles.secondary}`} onClick={() => router.push('/merchants')}>
+            Manage Mappings
           </button>
         </nav>
 
@@ -113,6 +116,12 @@ export default function Home() {
               onClick={() => router.push('/mappings')}
             >
               Add New Store Mapping
+            </button>
+            <button 
+              className={styles.button}
+              onClick={() => router.push('/merchants')}
+            >
+              Manage Existing Mappings
             </button>
             <button 
               className={styles.button}

@@ -6,6 +6,7 @@ interface StoreMapping {
   _id: string;
   store_name: string;
   category: string;
+  tags?: string[];
   updated_at?: string;
 }
 
@@ -16,7 +17,10 @@ export default function MappingsPage() {
   const [mappings, setMappings] = useState<StoreMapping[]>([]);
   const [storeName, setStoreName] = useState('');
   const [category, setCategory] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState('');
   const [commonCategories, setCommonCategories] = useState<string[]>([]);
+  const [commonTags, setCommonTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -25,6 +29,7 @@ export default function MappingsPage() {
   useEffect(() => {
     fetchMappings();
     fetchCommonCategories();
+    fetchCommonTags();
   }, []);
 
   useEffect(() => {
@@ -45,6 +50,21 @@ export default function MappingsPage() {
       console.error('Failed to fetch common categories:', err);
       // Fallback to default categories if API fails
       setCommonCategories(['Groceries', 'Transportation', 'Entertainment', 'Shopping', 'Dining', 'Health', 'Bills', 'General']);
+    }
+  };
+
+  const fetchCommonTags = async () => {
+    try {
+      const response = await fetch('/api/getCommonTags');
+      const data = await response.json();
+      
+      if (response.ok && data.tags) {
+        setCommonTags(data.tags);
+      }
+    } catch (err) {
+      console.error('Failed to fetch common tags:', err);
+      // Fallback to default tags if API fails
+      setCommonTags(['Recurring', 'Business', 'Personal', 'Gift', 'Travel']);
     }
   };
 
@@ -88,15 +108,19 @@ export default function MappingsPage() {
         body: JSON.stringify({
           store_name: storeName.trim(),
           category: category.trim(),
+          tags: tags.length > 0 ? tags : undefined,
         }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        setSuccess(`Successfully added mapping for "${storeName}" → "${category}"`);
+        const tagsStr = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
+        setSuccess(`Successfully added mapping for "${storeName}" → "${category}"${tagsStr}`);
         setStoreName('');
         setCategory('');
+        setTags([]);
+        setTagInput('');
         fetchMappings();
         
         // Redirect back to pending page if we came from there
@@ -113,6 +137,27 @@ export default function MappingsPage() {
     }
   };
 
+  const handleAddTag = (tagName: string) => {
+    const trimmed = tagName.trim();
+    if (trimmed && !tags.includes(trimmed)) {
+      setTags([...tags, trimmed]);
+      setTagInput('');
+    }
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    setTags(tags.filter(tag => tag !== tagToRemove));
+  };
+
+  const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddTag(tagInput);
+    } else if (e.key === 'Backspace' && !tagInput && tags.length > 0) {
+      handleRemoveTag(tags[tags.length - 1]);
+    }
+  };
+
   return (
     <div className={styles.container}>
       <main className={styles.main}>
@@ -126,6 +171,9 @@ export default function MappingsPage() {
         <nav className={styles.nav}>
           <button className={styles.navButton} onClick={() => router.push('/')}>
             ← Back to Dashboard
+          </button>
+          <button className={styles.navButton} onClick={() => router.push('/merchants')}>
+            Manage Existing Mappings
           </button>
         </nav>
 
@@ -178,6 +226,92 @@ export default function MappingsPage() {
               </small>
             </div>
 
+            {/* Tag Management Section */}
+            <div className={styles.formGroup}>
+              <label className={styles.label}>
+                Tags (optional)
+              </label>
+              
+              {/* Selected Tags */}
+              {tags.length > 0 && (
+                <div style={{ 
+                  display: 'flex', 
+                  flexWrap: 'wrap', 
+                  gap: '8px', 
+                  marginBottom: '10px',
+                  padding: '8px',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  backgroundColor: '#f9f9f9'
+                }}>
+                  {tags.map((tag) => (
+                    <span
+                      key={tag}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 10px',
+                        backgroundColor: '#e3f2fd',
+                        border: '1px solid #90caf9',
+                        borderRadius: '16px',
+                        fontSize: '14px',
+                        color: '#1976d2'
+                      }}
+                    >
+                      {tag}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(tag)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#1976d2',
+                          cursor: 'pointer',
+                          padding: '0',
+                          fontSize: '16px',
+                          lineHeight: '1',
+                          fontWeight: 'bold'
+                        }}
+                        aria-label={`Remove ${tag}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Tag Input */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  className={styles.input}
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={handleTagInputKeyDown}
+                  placeholder="Type a tag and press Enter"
+                  style={{ flex: 1 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddTag(tagInput)}
+                  disabled={!tagInput.trim()}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: tagInput.trim() ? '#2196F3' : '#ccc',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: tagInput.trim() ? 'pointer' : 'not-allowed',
+                    fontWeight: 500
+                  }}
+                >
+                  Add Tag
+                </button>
+              </div>
+            </div>
+
             <button
               type="submit"
               className={styles.button}
@@ -209,6 +343,30 @@ export default function MappingsPage() {
                       {mapping.category}
                     </div>
                   </div>
+                  {mapping.tags && mapping.tags.length > 0 && (
+                    <div style={{ 
+                      marginTop: '8px',
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '6px'
+                    }}>
+                      {mapping.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          style={{
+                            padding: '2px 8px',
+                            backgroundColor: '#e3f2fd',
+                            border: '1px solid #90caf9',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            color: '#1976d2'
+                          }}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {mapping.updated_at && (
                     <div className={styles.transactionDetails}>
                       Updated: {new Date(mapping.updated_at).toLocaleString()}
@@ -266,6 +424,44 @@ export default function MappingsPage() {
           </div>
           <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: '#999' }}>
             💡 Run <code>syncToshlCategoriesToMongoDB()</code> in Google Apps Script to update this list with your actual Toshl categories
+          </div>
+        </div>
+
+        <div className={`${styles.card} ${styles.message} ${styles.info}`}>
+          <strong>Common Toshl Tags:</strong>
+          <div style={{ marginTop: '0.5rem', marginBottom: '0.5rem', fontSize: '0.85rem', color: '#666' }}>
+            {commonTags.length > 0 ? 'Click tags to add them (sorted by usage):' : 'Loading your most-used tags...'}
+          </div>
+          <div style={{ marginTop: '0.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            {commonTags.length > 0 ? (
+              commonTags.map(tag => (
+                <button
+                  key={tag}
+                  onClick={() => handleAddTag(tag)}
+                  disabled={tags.includes(tag)}
+                  style={{
+                    padding: '0.4rem 0.8rem',
+                    background: tags.includes(tag) ? '#90caf9' : '#e3f2fd',
+                    color: tags.includes(tag) ? '#0d47a1' : '#1976d2',
+                    border: `1px solid ${tags.includes(tag) ? '#42a5f5' : '#90caf9'}`,
+                    borderRadius: '16px',
+                    cursor: tags.includes(tag) ? 'not-allowed' : 'pointer',
+                    fontSize: '0.85rem',
+                    transition: 'all 0.2s',
+                    opacity: tags.includes(tag) ? 0.6 : 1
+                  }}
+                >
+                  {tag} {tags.includes(tag) && '✓'}
+                </button>
+              ))
+            ) : (
+              <span style={{ color: '#999', fontSize: '0.85rem' }}>
+                Run tag sync in Google Apps Script to see your tags here
+              </span>
+            )}
+          </div>
+          <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: '#999' }}>
+            💡 Run <code>syncToshlTagsToMongoDB()</code> or <code>runFullSync()</code> in Google Apps Script to update tags
           </div>
         </div>
       </main>

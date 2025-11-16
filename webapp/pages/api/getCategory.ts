@@ -17,7 +17,7 @@ export default async function handler(
     }
 
     const { db } = await connectToDatabase();
-    const collection = db.collection('store_collections');
+    const collection = db.collection('merchants');
 
     // Look up the category for this store
     const mapping = await collection.findOne({ store_name });

@@ -60,6 +60,9 @@ export default function PendingPage() {
           <button className={styles.navButton} onClick={() => router.push('/')}>
             ← Back to Dashboard
           </button>
+          <button className={styles.navButton} onClick={() => router.push('/merchants')}>
+            Manage Mappings
+          </button>
           <button 
             className={styles.navButton}
             onClick={fetchPendingTransactions}
