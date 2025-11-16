@@ -27,10 +27,44 @@ export default function PendingPage() {
   const [deduplicating, setDeduplicating] = useState(false);
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
   const [descriptionValue, setDescriptionValue] = useState('');
+  const [editingMapping, setEditingMapping] = useState<string | null>(null);
+  const [editCategory, setEditCategory] = useState('');
+  const [editTags, setEditTags] = useState<string[]>([]);
+  const [editTagInput, setEditTagInput] = useState('');
+  
+  // Category and tag autocomplete states for editing
+  const [categories, setCategories] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
+  const [showEditCategorySuggestions, setShowEditCategorySuggestions] = useState(false);
+  const [filteredEditCategories, setFilteredEditCategories] = useState<string[]>([]);
+  const [showEditTagSuggestions, setShowEditTagSuggestions] = useState(false);
+  const [filteredEditTags, setFilteredEditTags] = useState<string[]>([]);
 
   useEffect(() => {
     fetchPendingTransactions();
+    fetchCategoriesAndTags();
   }, []);
+
+  const fetchCategoriesAndTags = async () => {
+    try {
+      const [categoriesRes, tagsRes] = await Promise.all([
+        fetch('/api/getCommonCategories'),
+        fetch('/api/getCommonTags')
+      ]);
+
+      if (categoriesRes.ok) {
+        const categoriesData = await categoriesRes.json();
+        setCategories(categoriesData.categories || []);
+      }
+
+      if (tagsRes.ok) {
+        const tagsData = await tagsRes.json();
+        setTags(tagsData.tags || []);
+      }
+    } catch (err) {
+      console.error('Error fetching categories and tags:', err);
+    }
+  };
 
   const fetchPendingTransactions = async () => {
     setLoading(true);
@@ -167,6 +201,105 @@ export default function PendingPage() {
   const handleCancelEditDescription = () => {
     setEditingDescription(null);
     setDescriptionValue('');
+  };
+
+  const handleStartEditMapping = (transaction: PendingTransaction) => {
+    setEditingMapping(transaction._id);
+    setEditCategory(transaction.category || '');
+    setEditTags(transaction.tags || []);
+    setEditTagInput('');
+  };
+
+  const handleCancelEditMapping = () => {
+    setEditingMapping(null);
+    setEditCategory('');
+    setEditTags([]);
+    setEditTagInput('');
+    setShowEditCategorySuggestions(false);
+    setShowEditTagSuggestions(false);
+  };
+
+  const handleSaveMapping = async (transactionId: string) => {
+    if (!editCategory.trim()) {
+      setError('Category cannot be empty');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/updatePendingMapping', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          id: transactionId,
+          category: editCategory,
+          tags: editTags
+        })
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess('Mapping updated successfully');
+        setEditingMapping(null);
+        setEditCategory('');
+        setEditTags([]);
+        setEditTagInput('');
+        fetchPendingTransactions();
+      } else {
+        setError(data.error || 'Failed to update mapping');
+      }
+    } catch (err) {
+      setError('Network error: Failed to update mapping');
+    }
+  };
+
+  const handleEditCategoryInputChange = (value: string) => {
+    setEditCategory(value);
+    
+    if (value.trim() === '') {
+      setFilteredEditCategories(categories);
+      setShowEditCategorySuggestions(true);
+    } else {
+      const filtered = categories.filter(cat =>
+        cat.toLowerCase().includes(value.toLowerCase())
+      );
+      setFilteredEditCategories(filtered);
+      setShowEditCategorySuggestions(true);
+    }
+  };
+
+  const handleEditCategorySelect = (category: string) => {
+    setEditCategory(category);
+    setShowEditCategorySuggestions(false);
+  };
+
+  const handleEditTagInputChange = (value: string) => {
+    setEditTagInput(value);
+    
+    if (value.trim() === '') {
+      const availableTags = tags.filter(t => !editTags.includes(t));
+      setFilteredEditTags(availableTags);
+      setShowEditTagSuggestions(true);
+    } else {
+      const filtered = tags.filter(tag =>
+        tag.toLowerCase().includes(value.toLowerCase()) && !editTags.includes(tag)
+      );
+      setFilteredEditTags(filtered);
+      setShowEditTagSuggestions(true);
+    }
+  };
+
+  const handleEditTagSelect = (tag: string) => {
+    if (!editTags.includes(tag)) {
+      setEditTags([...editTags, tag]);
+    }
+    setEditTagInput('');
+    setShowEditTagSuggestions(false);
+  };
+
+  const handleRemoveEditTag = (tagToRemove: string) => {
+    setEditTags(editTags.filter(t => t !== tagToRemove));
   };
 
   // Categorize transactions
@@ -615,35 +748,270 @@ export default function PendingPage() {
                     </div>
                   )}
                   
-                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{
-                      padding: '4px 10px',
-                      backgroundColor: '#e3f2fd',
-                      border: '1px solid #90caf9',
-                      borderRadius: '16px',
-                      fontSize: '13px',
-                      color: '#1976d2',
-                      fontWeight: 500
-                    }}>
-                      → {transaction.category}
-                    </span>
-                    {transaction.tags && transaction.tags.length > 0 && (
-                      transaction.tags.map((tag) => (
-                        <span
-                          key={tag}
+                  {/* Category and Tags - with edit capability */}
+                  {editingMapping === transaction._id ? (
+                    <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
+                      <p style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 500 }}>
+                        Edit Category & Tags:
+                      </p>
+                      
+                      {/* Category Input */}
+                      <div style={{ marginBottom: '12px', position: 'relative' }}>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: '#666' }}>
+                          Category *
+                        </label>
+                        <input
+                          type="text"
+                          value={editCategory}
+                          onChange={(e) => handleEditCategoryInputChange(e.target.value)}
+                          onFocus={() => {
+                            setFilteredEditCategories(categories);
+                            setShowEditCategorySuggestions(true);
+                          }}
+                          onBlur={() => setTimeout(() => setShowEditCategorySuggestions(false), 200)}
+                          placeholder="Enter category..."
                           style={{
-                            padding: '4px 10px',
-                            backgroundColor: '#f3e5f5',
-                            border: '1px solid #ce93d8',
-                            borderRadius: '16px',
-                            fontSize: '12px',
-                            color: '#6a1b9a'
+                            width: '100%',
+                            padding: '8px 12px',
+                            border: '2px solid #2196f3',
+                            borderRadius: '4px',
+                            fontSize: '14px',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                        {showEditCategorySuggestions && filteredEditCategories.length > 0 && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '100%',
+                            left: 0,
+                            right: 0,
+                            backgroundColor: 'white',
+                            border: '1px solid #ddd',
+                            borderRadius: '4px',
+                            maxHeight: '200px',
+                            overflowY: 'auto',
+                            zIndex: 1000,
+                            marginTop: '4px',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                          }}>
+                            {filteredEditCategories.map((cat) => (
+                              <div
+                                key={cat}
+                                onClick={() => handleEditCategorySelect(cat)}
+                                style={{
+                                  padding: '8px 12px',
+                                  cursor: 'pointer',
+                                  borderBottom: '1px solid #f0f0f0',
+                                  color: '#333'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#e3f2fd';
+                                  e.currentTarget.style.color = '#1976d2';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'white';
+                                  e.currentTarget.style.color = '#333';
+                                }}
+                              >
+                                {cat}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Tags Input */}
+                      <div style={{ marginBottom: '12px', position: 'relative' }}>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: '#666' }}>
+                          Tags (optional)
+                        </label>
+                        {editTags.length > 0 && (
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                            {editTags.map((tag) => (
+                              <span
+                                key={tag}
+                                style={{
+                                  padding: '4px 8px',
+                                  backgroundColor: '#f3e5f5',
+                                  border: '1px solid #ce93d8',
+                                  borderRadius: '12px',
+                                  fontSize: '12px',
+                                  color: '#6a1b9a',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                              >
+                                {tag}
+                                <button
+                                  onClick={() => handleRemoveEditTag(tag)}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#6a1b9a',
+                                    cursor: 'pointer',
+                                    padding: '0',
+                                    fontSize: '14px',
+                                    lineHeight: '1'
+                                  }}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <input
+                          type="text"
+                          value={editTagInput}
+                          onChange={(e) => handleEditTagInputChange(e.target.value)}
+                          onFocus={() => {
+                            const availableTags = tags.filter(t => !editTags.includes(t));
+                            setFilteredEditTags(availableTags);
+                            setShowEditTagSuggestions(true);
+                          }}
+                          onBlur={() => setTimeout(() => setShowEditTagSuggestions(false), 200)}
+                          placeholder="Add tags..."
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            border: '1px solid #ddd',
+                            borderRadius: '4px',
+                            fontSize: '14px',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                        {showEditTagSuggestions && filteredEditTags.length > 0 && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '100%',
+                            left: 0,
+                            right: 0,
+                            backgroundColor: 'white',
+                            border: '1px solid #ddd',
+                            borderRadius: '4px',
+                            maxHeight: '150px',
+                            overflowY: 'auto',
+                            zIndex: 1000,
+                            marginTop: '4px',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                          }}>
+                            {filteredEditTags.map((tag) => (
+                              <div
+                                key={tag}
+                                onClick={() => handleEditTagSelect(tag)}
+                                style={{
+                                  padding: '6px 12px',
+                                  cursor: 'pointer',
+                                  borderBottom: '1px solid #f0f0f0',
+                                  fontSize: '13px',
+                                  color: '#333'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#f3e5f5';
+                                  e.currentTarget.style.color = '#6a1b9a';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'white';
+                                  e.currentTarget.style.color = '#333';
+                                }}
+                              >
+                                {tag}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Save/Cancel Buttons */}
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={() => handleSaveMapping(transaction._id)}
+                          disabled={!editCategory.trim()}
+                          style={{
+                            flex: 1,
+                            padding: '8px 16px',
+                            backgroundColor: editCategory.trim() ? '#4caf50' : '#ccc',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: editCategory.trim() ? 'pointer' : 'not-allowed',
+                            fontWeight: 500,
+                            fontSize: '14px'
                           }}
                         >
-                          {tag}
+                          Save Changes
+                        </button>
+                        <button
+                          onClick={handleCancelEditMapping}
+                          style={{
+                            flex: 1,
+                            padding: '8px 16px',
+                            backgroundColor: '#757575',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: 500,
+                            fontSize: '14px'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <span style={{
+                          padding: '4px 10px',
+                          backgroundColor: '#e3f2fd',
+                          border: '1px solid #90caf9',
+                          borderRadius: '16px',
+                          fontSize: '13px',
+                          color: '#1976d2',
+                          fontWeight: 500
+                        }}>
+                          → {transaction.category}
                         </span>
-                      ))
-                    )}
+                        {transaction.tags && transaction.tags.length > 0 && (
+                          transaction.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              style={{
+                                padding: '4px 10px',
+                                backgroundColor: '#f3e5f5',
+                                border: '1px solid #ce93d8',
+                                borderRadius: '16px',
+                                fontSize: '12px',
+                                color: '#6a1b9a'
+                              }}
+                            >
+                              {tag}
+                            </span>
+                          ))
+                        )}
+                        <button
+                          onClick={() => handleStartEditMapping(transaction)}
+                          style={{
+                            padding: '4px 12px',
+                            backgroundColor: '#2196f3',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: 500,
+                            fontSize: '12px',
+                            marginLeft: 'auto'
+                          }}
+                        >
+                          ✏️ Edit
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   </div>
                   <div className={styles.transactionDetails}>
                     Date: {transaction.date} | Created: {new Date(transaction.created_at).toLocaleString()}
