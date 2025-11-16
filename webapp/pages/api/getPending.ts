@@ -11,21 +11,33 @@ export default async function handler(
 
   try {
     const { db } = await connectToDatabase();
-    const collection = db.collection('pending_transactions');
+    const pendingCollection = db.collection('pending_transactions');
+    const merchantsCollection = db.collection('merchants');
 
-    // Get all unprocessed pending transactions
-    const documents = await collection
-      .find({ processed: false })
+    // Get all pending transactions (both processed and unprocessed)
+    const allPending = await pendingCollection
+      .find({})
       .sort({ created_at: -1 })
       .toArray();
 
-    // Convert ObjectId to string for JSON serialization
-    const serializedDocs = documents.map(doc => ({
-      ...doc,
-      _id: doc._id.toString()
-    }));
+    // Get all merchant mappings
+    const merchants = await merchantsCollection.find({}).toArray();
+    const merchantMap = new Map(merchants.map(m => [m.store_name, m]));
 
-    return res.status(200).json({ documents: serializedDocs });
+    // Categorize transactions and add mapping info
+    const categorized = allPending.map(doc => {
+      const hasMapping = merchantMap.has(doc.store_name);
+      const mapping = hasMapping ? merchantMap.get(doc.store_name) : null;
+      return {
+        ...doc,
+        _id: doc._id.toString(),
+        has_mapping: hasMapping,
+        category: mapping?.category || null,
+        tags: mapping?.tags || null
+      };
+    });
+
+    return res.status(200).json({ documents: categorized });
   } catch (error) {
     console.error('Error fetching pending transactions:', error);
     return res.status(500).json({ error: 'Internal server error' });
