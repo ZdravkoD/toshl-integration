@@ -494,61 +494,7 @@ export default function MappingsPage() {
           </form>
         </div>
 
-        <div className={styles.card}>
-          <h2 className={styles.cardTitle}>
-            Existing Mappings ({mappings.length})
-          </h2>
-
-          {loading ? (
-            <div className={styles.loading}>Loading mappings...</div>
-          ) : mappings.length === 0 ? (
-            <div className={styles.emptyState}>
-              No mappings yet. Add your first mapping above!
-            </div>
-          ) : (
-            <div>
-              {mappings.map((mapping) => (
-                <div key={mapping._id} className={styles.transaction}>
-                  <div className={styles.transactionHeader}>
-                    <div className={styles.storeName}>{mapping.store_name}</div>
-                    <div style={{ fontWeight: 500, color: '#0070f3' }}>
-                      {mapping.category}
-                    </div>
-                  </div>
-                  {mapping.tags && mapping.tags.length > 0 && (
-                    <div style={{ 
-                      marginTop: '8px',
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      gap: '6px'
-                    }}>
-                      {mapping.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          style={{
-                            padding: '2px 8px',
-                            backgroundColor: '#e3f2fd',
-                            border: '1px solid #90caf9',
-                            borderRadius: '12px',
-                            fontSize: '12px',
-                            color: '#1976d2'
-                          }}
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {mapping.updated_at && (
-                    <div className={styles.transactionDetails}>
-                      Updated: {new Date(mapping.updated_at).toLocaleString()}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Existing Mappings section hidden per user request */}
 
         <div className={`${styles.card} ${styles.message} ${styles.info}`}>
           <strong>Common Toshl Categories:</strong>
