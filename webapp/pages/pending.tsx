@@ -12,6 +12,8 @@ interface PendingTransaction {
   created_at: string;
   processed: boolean;
   has_mapping: boolean;
+  needs_description?: boolean;
+  description?: string;
   category?: string;
   tags?: string[];
 }
@@ -23,6 +25,8 @@ export default function PendingPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [deduplicating, setDeduplicating] = useState(false);
+  const [editingDescription, setEditingDescription] = useState<string | null>(null);
+  const [descriptionValue, setDescriptionValue] = useState('');
 
   useEffect(() => {
     fetchPendingTransactions();
@@ -123,6 +127,48 @@ export default function PendingPage() {
     }
   };
 
+  const handleSaveDescription = async (transactionId: string) => {
+    if (!descriptionValue.trim()) {
+      setError('Description cannot be empty');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/updateDescription', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          id: transactionId,
+          description: descriptionValue
+        })
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess('Description saved successfully');
+        setEditingDescription(null);
+        setDescriptionValue('');
+        fetchPendingTransactions();
+      } else {
+        setError(data.error || 'Failed to save description');
+      }
+    } catch (err) {
+      setError('Network error: Failed to save description');
+    }
+  };
+
+  const handleStartEditDescription = (transaction: PendingTransaction) => {
+    setEditingDescription(transaction._id);
+    setDescriptionValue(transaction.description || '');
+  };
+
+  const handleCancelEditDescription = () => {
+    setEditingDescription(null);
+    setDescriptionValue('');
+  };
+
   // Categorize transactions
   const notProcessedNoMapping = transactions.filter(t => !t.processed && !t.has_mapping);
   const notProcessedHasMapping = transactions.filter(t => !t.processed && t.has_mapping);
@@ -210,12 +256,127 @@ export default function PendingPage() {
                       }}>
                         NO MAPPING
                       </span>
+                      {transaction.needs_description && (
+                        <span style={{
+                          padding: '4px 8px',
+                          backgroundColor: '#fff3e0',
+                          color: '#e65100',
+                          borderRadius: '12px',
+                          fontSize: '11px',
+                          fontWeight: 'bold'
+                        }}>
+                          📦 COURIER
+                        </span>
+                      )}
                       <div className={styles.storeName}>{transaction.store_name}</div>
                     </div>
                     <div className={styles.amount}>
                       {transaction.amount.toFixed(2)} {transaction.currency}
                     </div>
                   </div>
+                  
+                  {/* Description input for courier services */}
+                  {transaction.needs_description && (
+                    <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#fff8e1', borderRadius: '4px' }}>
+                      <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#f57c00', fontWeight: 500 }}>
+                        📦 This is a courier service. Please add a description (e.g., "Books from Amazon", "Laptop repair parts"):
+                      </p>
+                      {editingDescription === transaction._id ? (
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            value={descriptionValue}
+                            onChange={(e) => setDescriptionValue(e.target.value)}
+                            placeholder="Enter description..."
+                            style={{
+                              flex: 1,
+                              padding: '8px 12px',
+                              border: '2px solid #ff9800',
+                              borderRadius: '4px',
+                              fontSize: '14px'
+                            }}
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleSaveDescription(transaction._id)}
+                            style={{
+                              padding: '8px 16px',
+                              backgroundColor: '#4caf50',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontWeight: 500,
+                              fontSize: '14px'
+                            }}
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={handleCancelEditDescription}
+                            style={{
+                              padding: '8px 16px',
+                              backgroundColor: '#757575',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontWeight: 500,
+                              fontSize: '14px'
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : transaction.description ? (
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <span style={{
+                            padding: '8px 12px',
+                            backgroundColor: '#e8f5e9',
+                            border: '1px solid #4caf50',
+                            borderRadius: '4px',
+                            fontSize: '14px',
+                            color: '#2e7d32',
+                            flex: 1
+                          }}>
+                            ✓ {transaction.description}
+                          </span>
+                          <button
+                            onClick={() => handleStartEditDescription(transaction)}
+                            style={{
+                              padding: '8px 16px',
+                              backgroundColor: '#2196f3',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontWeight: 500,
+                              fontSize: '14px'
+                            }}
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleStartEditDescription(transaction)}
+                          style={{
+                            padding: '8px 16px',
+                            backgroundColor: '#ff9800',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: 500,
+                            fontSize: '14px'
+                          }}
+                        >
+                          + Add Description
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  
                   <div className={styles.transactionDetails}>
                     Date: {transaction.date} | Created: {new Date(transaction.created_at).toLocaleString()}
                   </div>
@@ -281,14 +442,179 @@ export default function PendingPage() {
                         fontSize: '11px',
                         fontWeight: 'bold'
                       }}>
-                        WAITING
+                        {transaction.needs_description && !transaction.description ? 'NEEDS DESCRIPTION' : 'WAITING'}
                       </span>
+                      {transaction.needs_description && (
+                        <span style={{
+                          padding: '4px 8px',
+                          backgroundColor: '#fff3e0',
+                          color: '#e65100',
+                          borderRadius: '12px',
+                          fontSize: '11px',
+                          fontWeight: 'bold'
+                        }}>
+                          📦 COURIER
+                        </span>
+                      )}
                       <div className={styles.storeName}>{transaction.store_name}</div>
                     </div>
                     <div className={styles.amount}>
                       {transaction.amount.toFixed(2)} {transaction.currency}
                     </div>
                   </div>
+                  
+                  {/* Show description if it's a courier service */}
+                  {transaction.needs_description && (
+                    <div style={{ marginTop: '12px', padding: '12px', backgroundColor: transaction.description ? '#e8f5e9' : '#fff8e1', borderRadius: '4px' }}>
+                      {transaction.description ? (
+                        <div>
+                          <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#2e7d32', fontWeight: 500 }}>
+                            📦 Courier delivery description:
+                          </p>
+                          {editingDescription === transaction._id ? (
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
+                              <input
+                                type="text"
+                                value={descriptionValue}
+                                onChange={(e) => setDescriptionValue(e.target.value)}
+                                placeholder="Enter description..."
+                                style={{
+                                  flex: 1,
+                                  padding: '8px 12px',
+                                  border: '2px solid #4caf50',
+                                  borderRadius: '4px',
+                                  fontSize: '14px'
+                                }}
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => handleSaveDescription(transaction._id)}
+                                style={{
+                                  padding: '8px 16px',
+                                  backgroundColor: '#4caf50',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontWeight: 500,
+                                  fontSize: '14px'
+                                }}
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={handleCancelEditDescription}
+                                style={{
+                                  padding: '8px 16px',
+                                  backgroundColor: '#757575',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontWeight: 500,
+                                  fontSize: '14px'
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+                              <span style={{ fontSize: '14px', color: '#1b5e20', fontWeight: 500 }}>
+                                "{transaction.description}"
+                              </span>
+                              <button
+                                onClick={() => handleStartEditDescription(transaction)}
+                                style={{
+                                  padding: '4px 12px',
+                                  backgroundColor: '#2196f3',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontWeight: 500,
+                                  fontSize: '12px'
+                                }}
+                              >
+                                Edit
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div>
+                          <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#f57c00', fontWeight: 500 }}>
+                            ⚠️ Missing description! Add one before processing:
+                          </p>
+                          {editingDescription === transaction._id ? (
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <input
+                                type="text"
+                                value={descriptionValue}
+                                onChange={(e) => setDescriptionValue(e.target.value)}
+                                placeholder="Enter description..."
+                                style={{
+                                  flex: 1,
+                                  padding: '8px 12px',
+                                  border: '2px solid #ff9800',
+                                  borderRadius: '4px',
+                                  fontSize: '14px'
+                                }}
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => handleSaveDescription(transaction._id)}
+                                style={{
+                                  padding: '8px 16px',
+                                  backgroundColor: '#4caf50',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontWeight: 500,
+                                  fontSize: '14px'
+                                }}
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={handleCancelEditDescription}
+                                style={{
+                                  padding: '8px 16px',
+                                  backgroundColor: '#757575',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontWeight: 500,
+                                  fontSize: '14px'
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleStartEditDescription(transaction)}
+                              style={{
+                                padding: '8px 16px',
+                                backgroundColor: '#ff9800',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontWeight: 500,
+                                fontSize: '14px'
+                              }}
+                            >
+                              + Add Description
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
                   <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{
                       padding: '4px 10px',

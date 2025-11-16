@@ -10,7 +10,7 @@ export default async function handler(
   }
 
   try {
-    const { store_name, amount, currency, date, email_id } = req.body;
+    const { store_name, amount, currency, date, email_id, needs_description } = req.body;
 
     if (!store_name || !amount || !currency || !date || !email_id) {
       return res.status(400).json({ 
@@ -28,6 +28,7 @@ export default async function handler(
       currency,
       date,
       email_id,
+      needs_description: needs_description === true,
       created_at: new Date(),
       processed: false
     });
