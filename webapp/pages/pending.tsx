@@ -72,6 +72,28 @@ export default function PendingPage() {
     }
   };
 
+  const handleDeletePending = async (id: string, storeName: string) => {
+    if (!confirm(`Are you sure you want to delete the pending transaction for "${storeName}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/deletePending?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess(`Deleted pending transaction for "${storeName}"`);
+        fetchPendingTransactions();
+      } else {
+        setError(data.error || 'Failed to delete pending transaction');
+      }
+    } catch (err) {
+      setError('Network error: Failed to delete pending transaction');
+    }
+  };
+
   // Categorize transactions
   const notProcessedNoMapping = transactions.filter(t => !t.processed && !t.has_mapping);
   const notProcessedHasMapping = transactions.filter(t => !t.processed && t.has_mapping);
@@ -157,13 +179,31 @@ export default function PendingPage() {
                   <div className={styles.transactionDetails}>
                     Date: {transaction.date} | Created: {new Date(transaction.created_at).toLocaleString()}
                   </div>
-                  <button 
-                    className={styles.button}
-                    onClick={() => handleAddMapping(transaction.store_name)}
-                    style={{ marginTop: '0.75rem', width: '100%', backgroundColor: '#f44336' }}
-                  >
-                    Add Category Mapping
-                  </button>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '0.75rem' }}>
+                    <button 
+                      className={styles.button}
+                      onClick={() => handleAddMapping(transaction.store_name)}
+                      style={{ flex: 1, backgroundColor: '#f44336' }}
+                    >
+                      Add Category Mapping
+                    </button>
+                    <button 
+                      onClick={() => handleDeletePending(transaction._id, transaction.store_name)}
+                      style={{
+                        padding: '10px 20px',
+                        backgroundColor: '#757575',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontWeight: 500,
+                        fontSize: '14px'
+                      }}
+                      title="Delete this pending transaction"
+                    >
+                      🗑️ Delete
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
