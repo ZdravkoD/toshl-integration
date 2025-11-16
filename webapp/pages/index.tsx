@@ -10,6 +10,8 @@ interface PendingTransaction {
   date: string;
   email_id: string;
   created_at: string;
+  has_mapping?: boolean;
+  processed?: boolean;
 }
 
 export default function Home() {
@@ -17,6 +19,11 @@ export default function Home() {
   const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Filter transactions that need action (no mapping and not processed)
+  const transactionsNeedingAction = pendingTransactions.filter(
+    t => !t.has_mapping && !t.processed
+  );
 
   useEffect(() => {
     fetchPendingTransactions();
@@ -51,7 +58,7 @@ export default function Home() {
 
         <nav className={styles.nav}>
           <button className={styles.navButton} onClick={() => router.push('/pending')}>
-            Pending Transactions ({pendingTransactions.length})
+            Pending Transactions ({transactionsNeedingAction.length})
           </button>
           <button className={`${styles.navButton} ${styles.secondary}`} onClick={() => router.push('/mappings')}>
             + Add Mapping
@@ -61,24 +68,19 @@ export default function Home() {
           </button>
         </nav>
 
-        <div className={styles.card}>
-          <h2 className={styles.cardTitle}>Recent Pending Transactions</h2>
+        {/* Only show if there are transactions needing action */}
+        {!loading && transactionsNeedingAction.length > 0 && (
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>Recent Pending Transactions</h2>
 
-          {error && (
-            <div className={`${styles.message} ${styles.error}`}>
-              {error}
-            </div>
-          )}
+            {error && (
+              <div className={`${styles.message} ${styles.error}`}>
+                {error}
+              </div>
+            )}
 
-          {loading ? (
-            <div className={styles.loading}>Loading...</div>
-          ) : pendingTransactions.length === 0 ? (
-            <div className={styles.emptyState}>
-              No pending transactions. All caught up! 🎉
-            </div>
-          ) : (
             <div>
-              {pendingTransactions.slice(0, 5).map((transaction) => (
+              {transactionsNeedingAction.slice(0, 5).map((transaction) => (
                 <div key={transaction._id} className={styles.transaction}>
                   <div className={styles.transactionHeader}>
                     <div className={styles.storeName}>{transaction.store_name}</div>
@@ -95,18 +97,18 @@ export default function Home() {
                 </div>
               ))}
               
-              {pendingTransactions.length > 5 && (
+              {transactionsNeedingAction.length > 5 && (
                 <button 
                   className={styles.button}
                   onClick={() => router.push('/pending')}
                   style={{ marginTop: '1rem' }}
                 >
-                  View All {pendingTransactions.length} Pending Transactions
+                  View All {transactionsNeedingAction.length} Pending Transactions
                 </button>
               )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className={styles.card}>
           <h2 className={styles.cardTitle}>Quick Actions</h2>

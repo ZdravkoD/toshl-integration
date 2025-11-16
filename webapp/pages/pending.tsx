@@ -22,6 +22,7 @@ export default function PendingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [deduplicating, setDeduplicating] = useState(false);
 
   useEffect(() => {
     fetchPendingTransactions();
@@ -94,6 +95,34 @@ export default function PendingPage() {
     }
   };
 
+  const handleDeduplicate = async () => {
+    if (!confirm('Are you sure you want to remove duplicate pending transactions? This will keep the oldest occurrence of each duplicate and remove the rest.')) {
+      return;
+    }
+
+    setDeduplicating(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await fetch('/api/deduplicatePending', {
+        method: 'POST'
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess(data.message || `Removed ${data.deletedCount} duplicate(s)`);
+        fetchPendingTransactions();
+      } else {
+        setError(data.error || 'Failed to deduplicate pending transactions');
+      }
+    } catch (err) {
+      setError('Network error: Failed to deduplicate pending transactions');
+    } finally {
+      setDeduplicating(false);
+    }
+  };
+
   // Categorize transactions
   const notProcessedNoMapping = transactions.filter(t => !t.processed && !t.has_mapping);
   const notProcessedHasMapping = transactions.filter(t => !t.processed && t.has_mapping);
@@ -122,6 +151,17 @@ export default function PendingPage() {
             disabled={loading}
           >
             {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+          <button 
+            className={styles.navButton}
+            onClick={handleDeduplicate}
+            disabled={deduplicating || loading}
+            style={{
+              backgroundColor: deduplicating ? '#ccc' : '#9c27b0',
+              cursor: deduplicating || loading ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {deduplicating ? 'Deduplicating...' : '🔄 Remove Duplicates'}
           </button>
         </nav>
 
