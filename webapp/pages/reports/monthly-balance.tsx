@@ -94,7 +94,12 @@ export default function MonthlyBalanceReportPage() {
   const points = chartRows.map((row, index) => {
     const x = chartPadding.left + (chartRows.length > 1 ? xStep * index : chartInnerWidth / 2);
     const y = chartPadding.top + ((maxBalance - row.balance) / balanceRange) * chartInnerHeight;
-    return { ...row, x, y, index };
+    const previousX = index === 0 ? chartPadding.left : chartPadding.left + xStep * (index - 1);
+    const nextX = index === chartRows.length - 1 ? chartWidth - chartPadding.right : chartPadding.left + xStep * (index + 1);
+    const hitStartX = index === 0 ? chartPadding.left : x - (x - previousX) / 2;
+    const hitEndX = index === chartRows.length - 1 ? chartWidth - chartPadding.right : x + (nextX - x) / 2;
+
+    return { ...row, x, y, index, hitStartX, hitEndX };
   });
 
   const areaPath = points.length
@@ -195,12 +200,12 @@ export default function MonthlyBalanceReportPage() {
             {!!report.rows.length && (
               <div className={styles.chartCard}>
                 <div className={styles.chartHeader}>
-                  <div>
-                    <div className={styles.chartTitle}>Cumulative Balance By Month</div>
-                    <div className={styles.chartCaption}>
-                      Hover a point to inspect month-level net and running balance.
+                    <div>
+                      <div className={styles.chartTitle}>Cumulative Balance By Month</div>
+                      <div className={styles.chartCaption}>
+                        Hover anywhere in a month column to inspect month-level net and running balance.
+                      </div>
                     </div>
-                  </div>
 
                   {activeRow && (
                     <div className={styles.chartCallout}>
@@ -296,19 +301,21 @@ export default function MonthlyBalanceReportPage() {
 
                     {points.map((point) => (
                       <g key={`${point.month}-point`}>
+                        <rect
+                          x={point.hitStartX}
+                          y={chartPadding.top}
+                          width={point.hitEndX - point.hitStartX}
+                          height={chartInnerHeight}
+                          className={styles.chartHitArea}
+                          onMouseEnter={() => setActiveMonth(point.month)}
+                          onMouseMove={() => setActiveMonth(point.month)}
+                          onClick={() => setActiveMonth(point.month)}
+                        />
                         <circle
                           cx={point.x}
                           cy={point.y}
                           r={activeRow?.month === point.month ? 10 : 6}
                           className={activeRow?.month === point.month ? styles.chartPointActive : styles.chartPoint}
-                        />
-                        <circle
-                          cx={point.x}
-                          cy={point.y}
-                          r={20}
-                          className={styles.chartHitArea}
-                          onMouseEnter={() => setActiveMonth(point.month)}
-                          onClick={() => setActiveMonth(point.month)}
                         />
                       </g>
                     ))}
