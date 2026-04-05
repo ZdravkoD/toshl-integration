@@ -61,6 +61,14 @@ export interface MonthlyBalanceRow {
   balance: number;
 }
 
+export interface MonthlyBalanceReportDiagnostics {
+  from: string;
+  to: string;
+  mongoAggregateMs: number;
+  postProcessMs: number;
+  monthlyRowCount: number;
+}
+
 export interface CategorySpendTrendSeries {
   category: string;
   total: number;
@@ -514,12 +522,13 @@ export async function syncToshlMirror(db: Db, options: SyncRequestOptions = {}):
   }
 }
 
-export async function getMonthlyBalanceReport(
+export async function getMonthlyBalanceReportDetailed(
   db: Db,
   options: { from?: string; to?: string } = {}
 ) {
   const from = coerceIsoDate(options.from, DEFAULT_SYNC_START_DATE);
   const to = coerceIsoDate(options.to, todayIsoDate());
+  const aggregateStartedAt = Date.now();
   const monthlyRows = await db.collection(ENTRIES_COLLECTION)
     .aggregate([
       {
@@ -584,13 +593,16 @@ export async function getMonthlyBalanceReport(
       }
     ])
     .toArray();
+  const mongoAggregateMs = Date.now() - aggregateStartedAt;
 
   console.log('[toshl-report] loaded monthly aggregates', {
     from,
     to,
-    count: monthlyRows.length
+    count: monthlyRows.length,
+    mongoAggregateMs
   });
 
+  const postProcessStartedAt = Date.now();
   const rows = monthlyRows.map((row: any) => ({
     month: row.month,
     income: roundCurrency(Number(row.income || 0)),
@@ -622,8 +634,8 @@ export async function getMonthlyBalanceReport(
     return worst;
   }, null);
 
-  return {
-    currency: 'EUR',
+  const report = {
+    currency: 'EUR' as const,
     from,
     to,
     currentBalance: data.length ? data[data.length - 1].balance : 0,
@@ -631,6 +643,26 @@ export async function getMonthlyBalanceReport(
     worstMonth: worstMonth?.month || null,
     rows: data
   };
+  const postProcessMs = Date.now() - postProcessStartedAt;
+
+  return {
+    report,
+    diagnostics: {
+      from,
+      to,
+      mongoAggregateMs,
+      postProcessMs,
+      monthlyRowCount: data.length
+    } satisfies MonthlyBalanceReportDiagnostics
+  };
+}
+
+export async function getMonthlyBalanceReport(
+  db: Db,
+  options: { from?: string; to?: string } = {}
+) {
+  const { report } = await getMonthlyBalanceReportDetailed(db, options);
+  return report;
 }
 
 export async function getCategorySpendTrendReport(

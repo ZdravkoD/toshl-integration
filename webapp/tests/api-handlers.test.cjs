@@ -806,6 +806,53 @@ test('syncToshl forwards parsed sync options to the sync engine', async () => {
   assert.equal(res.body.reconcileDays, 45);
 });
 
+test('monthlyBalance API sets timing headers and returns the report body', async () => {
+  const handler = loadApiHandler('pages/api/reports/monthlyBalance.ts', {
+    '../../../lib/mongodb': {
+      connectToDatabaseDetailed: async () => ({
+        db: { name: 'mock-db' },
+        client: {},
+        cacheHit: true,
+        connectMs: 7
+      })
+    },
+    '../../../lib/toshlSync': {
+      getMonthlyBalanceReportDetailed: async () => ({
+        report: {
+          currency: 'EUR',
+          from: '2025-01-01',
+          to: '2025-02-28',
+          currentBalance: 700,
+          bestMonth: '2025-01',
+          worstMonth: '2025-02',
+          rows: []
+        },
+        diagnostics: {
+          from: '2025-01-01',
+          to: '2025-02-28',
+          mongoAggregateMs: 12,
+          postProcessMs: 3,
+          monthlyRowCount: 2
+        }
+      })
+    }
+  });
+
+  const req = createMockReq({
+    method: 'GET',
+    query: { from: '2025-01-01', to: '2025-02-28' }
+  });
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(typeof res.headers['Server-Timing'], 'string');
+  assert.equal(typeof res.headers['X-Report-Request-Id'], 'string');
+  assert.equal(res.body.currency, 'EUR');
+  assert.equal(res.body.currentBalance, 700);
+});
+
 test('monthly balance report aggregates entries from Mongo and excludes transfers from net', async () => {
   const { getMonthlyBalanceReport } = loadTsModule('lib/toshlSync.ts', {
     './toshl': {
