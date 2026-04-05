@@ -310,7 +310,20 @@ test('initializes historical import state in Script Properties', () => {
   assert.strictEqual(state.offset, 0);
   assert.strictEqual(state.batchSize, 10);
   assert.strictEqual(state.windowDays, 3);
+  assert.strictEqual(state.windowMonths, null);
   assert.ok(scriptProperties.HISTORICAL_IMPORT_STATE);
+});
+
+test('defaults historical import to 1-month windows', () => {
+  const { context } = loadAppsScript();
+
+  const state = context._initializeHistoricalImport(
+    new Date('2025-01-01T00:00:00Z'),
+    new Date('2025-01-31T00:00:00Z')
+  );
+
+  assert.strictEqual(state.windowDays, null);
+  assert.strictEqual(state.windowMonths, 1);
 });
 
 test('processes one historical import batch and advances offset within the same window', () => {
@@ -374,6 +387,51 @@ test('historical import logs message-level batch summary', () => {
   );
 });
 
+test('historical import uses a monthly window by default', () => {
+  let capturedQuery = null;
+  const { context } = loadAppsScript({
+    gmailSearchImpl(query, start, max) {
+      capturedQuery = { query, start, max };
+      return [];
+    }
+  });
+
+  context._initializeHistoricalImport(
+    new Date('2025-01-14T00:00:00Z'),
+    new Date('2025-03-31T00:00:00Z')
+  );
+
+  context._processHistoricalImportBatch(context._getHistoricalImportState());
+
+  assert.ok(capturedQuery.query.includes('after:2025/01/14'));
+  assert.ok(capturedQuery.query.includes('before:2025/02/14'));
+  assert.strictEqual(capturedQuery.start, 0);
+});
+
+test('continueHistoricalImport upgrades old weekly state to monthly windows', () => {
+  let capturedQuery = null;
+  const { context } = loadAppsScript({
+    gmailSearchImpl(query) {
+      capturedQuery = query;
+      return [];
+    }
+  });
+
+  context._initializeHistoricalImport(
+    new Date('2025-01-14T00:00:00Z'),
+    new Date('2025-03-31T00:00:00Z'),
+    { batchSize: 25, windowDays: 7 }
+  );
+
+  context.continueHistoricalImport();
+  const updated = context._getHistoricalImportState();
+
+  assert.strictEqual(updated.windowDays, null);
+  assert.strictEqual(updated.windowMonths, 1);
+  assert.ok(capturedQuery.includes('after:2025/01/14'));
+  assert.ok(capturedQuery.includes('before:2025/02/14'));
+});
+
 test('advances historical import cursor when a window is exhausted', () => {
   const { context } = loadAppsScript({
     gmailSearchImpl() {
@@ -428,6 +486,8 @@ test('returns historical import status and can reset the state', () => {
   const status = context.getHistoricalImportStatus();
   assert.strictEqual(status.startDate, '2025-01-01');
   assert.strictEqual(status.endDate, '2025-01-10');
+  assert.strictEqual(status.windowDays, 2);
+  assert.strictEqual(status.windowMonths, null);
 
   context.resetHistoricalImport();
   assert.strictEqual(context._getHistoricalImportState(), null);

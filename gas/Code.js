@@ -1769,6 +1769,17 @@ function _addDays(date, days) {
 }
 
 /**
+ * Add months to a date without mutating the input.
+ * Keeps the day-of-month when possible.
+ * @private
+ */
+function _addMonths(date, months) {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+/**
  * Get the persisted historical import state
  * @private
  */
@@ -1808,7 +1819,8 @@ function _initializeHistoricalImport(startDate, endDate, options) {
     cursorDate: _formatDateISO(startDate),
     offset: 0,
     batchSize: normalizedOptions.batchSize || 25,
-    windowDays: normalizedOptions.windowDays || 7,
+    windowDays: normalizedOptions.windowDays || null,
+    windowMonths: normalizedOptions.windowMonths || (normalizedOptions.windowDays ? null : 1),
     totalProcessedThreads: 0,
     runs: 0,
     completed: false,
@@ -1855,10 +1867,18 @@ function _processHistoricalImportBatch(state) {
     return 0;
   }
 
-  const windowEndExclusive = _addDays(
-    cursorDate,
-    Math.min(state.windowDays, Math.max(1, Math.ceil((endDateExclusive - cursorDate) / 86400000)))
-  );
+  let windowEndExclusive;
+  if (state.windowMonths && state.windowMonths > 0) {
+    windowEndExclusive = _addMonths(cursorDate, state.windowMonths);
+    if (windowEndExclusive > endDateExclusive) {
+      windowEndExclusive = endDateExclusive;
+    }
+  } else {
+    windowEndExclusive = _addDays(
+      cursorDate,
+      Math.min(state.windowDays, Math.max(1, Math.ceil((endDateExclusive - cursorDate) / 86400000)))
+    );
+  }
   const searchQuery = _buildHistoricalImportQuery(cursorDate, windowEndExclusive);
 
   Logger.log('Historical import query: ' + searchQuery);
@@ -1944,7 +1964,7 @@ function processLastFiveMonthsEmails() {
 
     state = _initializeHistoricalImport(startDate, endDate, {
       batchSize: 25,
-      windowDays: 7
+      windowMonths: 1
     });
   }
 
@@ -1970,6 +1990,13 @@ function continueHistoricalImport() {
   if (!state) {
     Logger.log('No historical import is currently initialized');
     return 0;
+  }
+
+  if (!state.windowMonths || state.windowMonths < 1) {
+    state.windowMonths = 1;
+    state.windowDays = null;
+    _saveHistoricalImportState(state);
+    Logger.log('Upgraded historical import window to 1 month');
   }
 
   const processedCount = _processHistoricalImportBatch(state);
@@ -2010,6 +2037,7 @@ function getHistoricalImportStatus() {
     offset: state.offset,
     batchSize: state.batchSize,
     windowDays: state.windowDays,
+    windowMonths: state.windowMonths || null,
     totalProcessedThreads: state.totalProcessedThreads,
     runs: state.runs,
     completed: state.completed,
@@ -2278,7 +2306,7 @@ function processEmails_2025_01_01_to_2025_08_01() {
     new Date(2025, 7, 1),
     {
       batchSize: 25,
-      windowDays: 7
+      windowMonths: 1
     }
   );
   return continueHistoricalImport();
