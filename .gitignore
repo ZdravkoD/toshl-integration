@@ -28,3 +28,7 @@ webapp/.vercel/
 webapp/*.tsbuildinfo
 webapp/next-env.d.ts
 .vercel
+
+# Generated local reports and audit output
+reports/
+scripts/duplicates/output/

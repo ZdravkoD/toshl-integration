@@ -7,6 +7,8 @@
   },
   "scripts": {
     "test": "node tests/run-tests.js",
-    "test:apps-script": "node tests/run-tests.js"
+    "test:apps-script": "node tests/run-tests.js",
+    "audit:duplicates": "node scripts/duplicates/audit.js",
+    "cleanup:duplicates": "node scripts/duplicates/cleanup.js"
   }
 }
