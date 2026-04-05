@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { GetServerSideProps } from 'next';
 import { useRouter } from 'next/router';
 import styles from '../../styles/Report.module.css';
 
@@ -360,3 +361,9 @@ export default function MonthlyBalanceReportPage() {
     </div>
   );
 }
+
+export const getServerSideProps: GetServerSideProps = async () => {
+  return {
+    props: {}
+  };
+};

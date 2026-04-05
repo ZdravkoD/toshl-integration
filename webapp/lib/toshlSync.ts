@@ -310,6 +310,12 @@ export async function syncToshlMirror(db: Db, options: SyncRequestOptions = {}):
   const reconcileDays = options.reconcileDays ?? DEFAULT_RECONCILE_DAYS;
 
   try {
+    console.log('[toshl-sync] starting sync', {
+      requestedStartDate,
+      requestedEndDate,
+      reconcileDays
+    });
+
     const [accounts, categories, tags] = await Promise.all([
       fetchToshlCollection<ToshlAccount>('/accounts', undefined, clientOptions),
       fetchToshlCollection<ToshlCategory>('/categories', undefined, clientOptions),
@@ -351,6 +357,11 @@ export async function syncToshlMirror(db: Db, options: SyncRequestOptions = {}):
       },
       clientOptions
     );
+    console.log('[toshl-sync] fetched entries', {
+      count: entries.length,
+      from: effectiveStartDate,
+      to: requestedEndDate
+    });
 
     const entryCollection = db.collection(ENTRIES_COLLECTION);
     let upserted = 0;
@@ -394,6 +405,11 @@ export async function syncToshlMirror(db: Db, options: SyncRequestOptions = {}):
       fetched_count: entries.length,
       reconcile_days: reconcileDays
     });
+    console.log('[toshl-sync] completed entries sync', {
+      upserted,
+      modified,
+      deleted: entryDeleteResult.deletedCount || 0
+    });
 
     resourceResults.push({
       resource: 'entries',
@@ -431,6 +447,11 @@ export async function getMonthlyBalanceReport(
     })
     .sort({ date: 1, toshl_id: 1 })
     .toArray();
+  console.log('[toshl-report] loaded mirrored entries', {
+    from,
+    to,
+    count: documents.length
+  });
 
   const months = new Map<string, Omit<MonthlyBalanceRow, 'balance'>>();
 

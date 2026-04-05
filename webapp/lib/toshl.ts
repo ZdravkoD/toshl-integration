@@ -128,7 +128,7 @@ export async function fetchToshlCollection<T>(
 ): Promise<T[]> {
   const perPage = Number(params?.per_page || DEFAULT_PER_PAGE);
   const results: T[] = [];
-  let page = 1;
+  let page = 0;
 
   while (true) {
     const pageItems = await fetchWithRetries(
@@ -142,6 +142,7 @@ export async function fetchToshlCollection<T>(
     }
 
     results.push(...pageItems);
+    console.log(`[toshl] fetched ${pageItems.length} item(s) from ${path} page=${page}`);
 
     if (pageItems.length < perPage) {
       return results;
@@ -155,4 +156,3 @@ export async function fetchToshlCollection<T>(
 export function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
-
