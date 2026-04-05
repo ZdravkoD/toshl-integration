@@ -1064,7 +1064,7 @@ export async function getOutlierTransactionsReport(
   const entries = await db.collection(ENTRIES_COLLECTION)
     .find({
       date: { $gte: from, $lte: to },
-      entry_type: { $in: ['expense', 'income'] },
+      entry_type: 'expense',
       is_transfer: { $ne: true },
       is_deleted: { $ne: true }
     }, {
