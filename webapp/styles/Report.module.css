@@ -369,22 +369,28 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 0;
+  align-content: flex-start;
+  min-height: 48px;
 }
 
 .chartToolbar {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 20px;
+  align-items: start;
   margin-bottom: 14px;
+  min-height: 116px;
 }
 
 .chartControlRow {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
+  min-height: 48px;
+  align-self: end;
 }
 
 .controlGroup {
@@ -669,6 +675,17 @@
   .chartControlRow {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .chartToolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+  }
+
+  .chartLegend {
+    min-height: 0;
   }
 
   .rankedItem {

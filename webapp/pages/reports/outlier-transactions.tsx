@@ -65,6 +65,10 @@ export default function OutlierTransactionsReportPage() {
 
   const rows = report?.rows || [];
   const activeRow = rows.find((row) => row.toshlId === activeId) || rows[0] || null;
+  const chartLimit = Math.max(
+    ...rows.flatMap((row) => [row.amount, row.baselineAmount]),
+    1
+  ) * 1.12;
   const chartOption = useMemo<EChartsOption>(() => ({
     animationDuration: 400,
     grid: { top: 28, right: 24, bottom: 72, left: 92 },
@@ -90,6 +94,8 @@ export default function OutlierTransactionsReportPage() {
     xAxis: {
       type: 'value',
       name: 'Baseline Amount',
+      min: 0,
+      max: chartLimit,
       nameLocation: 'middle',
       nameGap: 42,
       axisLabel: { color: '#5f6c76', formatter: (value: number) => currencyFormatter.format(value) },
@@ -98,27 +104,41 @@ export default function OutlierTransactionsReportPage() {
     yAxis: {
       type: 'value',
       name: 'Actual Amount',
+      min: 0,
+      max: chartLimit,
       axisLabel: { color: '#5f6c76', formatter: (value: number) => currencyFormatter.format(value) },
       splitLine: { lineStyle: { color: 'rgba(31, 41, 51, 0.12)' } }
     },
-    series: [{
-      type: 'scatter',
-      symbolSize: (value: number[]) => 12 + value[2] * 4,
-      data: rows.map((row) => [row.baselineAmount, row.amount, row.deviationRatio]),
-      itemStyle: {
-        color: '#c2410c',
-        opacity: 0.82,
-        borderColor: '#ffffff',
-        borderWidth: 2
-      },
-      markLine: {
-        silent: true,
+    series: [
+      {
+        type: 'line',
+        data: [
+          [0, 0],
+          [chartLimit, chartLimit]
+        ],
         symbol: 'none',
-        lineStyle: { color: 'rgba(15, 118, 110, 0.28)', type: 'dashed' },
-        data: [{ xAxis: 0, yAxis: 0 }, { coord: [Math.max(...rows.map((row) => row.amount), 0), Math.max(...rows.map((row) => row.amount), 0)] }]
+        silent: true,
+        lineStyle: {
+          color: 'rgba(15, 118, 110, 0.28)',
+          type: 'dashed',
+          width: 2
+        },
+        z: 1
+      },
+      {
+        type: 'scatter',
+        symbolSize: (value: number[]) => Math.min(34, Math.max(12, 10 + value[2] * 1.2)),
+        data: rows.map((row) => [row.baselineAmount, row.amount, row.deviationRatio]),
+        itemStyle: {
+          color: '#c2410c',
+          opacity: 0.82,
+          borderColor: '#ffffff',
+          borderWidth: 2
+        },
+        z: 3
       }
-    }]
-  }), [rows]);
+    ]
+  }), [chartLimit, rows]);
 
   return (
     <div className={styles.page}>

@@ -130,7 +130,10 @@ export default function IncomeTrendByCategoryPage() {
         const lines = items
           .sort((left: any, right: any) => Number(right.data?.rawAmount ?? 0) - Number(left.data?.rawAmount ?? 0))
           .slice(0, 5)
-          .map((item: any) => `<div>${item.seriesName} ${currencyFormatter.format(Number(item.data?.rawAmount ?? 0))}</div>`);
+          .map((item: any) => {
+            const color = item.color || '#ffffff';
+            return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;"><span style="display:inline-flex;align-items:center;gap:8px;"><span style="width:9px;height:9px;border-radius:999px;background:${color};display:inline-block;"></span>${item.seriesName}</span><span>${currencyFormatter.format(Number(item.data?.rawAmount ?? 0))}</span></div>`;
+          });
         return [`<div>${month}</div>`, `<div>Total ${currencyFormatter.format(total)}</div>`, ...lines].join('');
       }
     },
