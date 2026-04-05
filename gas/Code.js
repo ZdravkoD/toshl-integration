@@ -1257,20 +1257,33 @@ function _processEmailThread(thread) {
   const messages = thread.getMessages();
   const processedLabel = _getProcessedLabel();
   const pendingLabel = _getPendingLabel();
+  const stats = {
+    messagesSeen: 0,
+    skippedUnsuccessful: 0,
+    alreadyHandled: 0,
+    parseFailures: 0,
+    pendingSaved: 0,
+    existingEntries: 0,
+    processedExpenses: 0,
+    processedRefunds: 0
+  };
   
   // Process each message in the thread
   for (let message of messages) {
+    stats.messagesSeen++;
     const subject = message.getSubject();
     const emailId = message.getId();
     const threadId = thread.getId();
     
     // Skip unsuccessful transactions (Неуспешна = unsuccessful in Bulgarian)
     if (subject.toLowerCase().includes('неуспешна')) {
+      stats.skippedUnsuccessful++;
       Logger.log("Skipping unsuccessful transaction: " + subject);
       continue;
     }
     
     if (_isMessageHandled(emailId)) {
+      stats.alreadyHandled++;
       Logger.log("Email already processed: " + subject);
       continue;
     }
@@ -1291,6 +1304,7 @@ function _processEmailThread(thread) {
       const transaction = _parseTransaction(emailBody, emailDate);
       
       if (!transaction) {
+        stats.parseFailures++;
         Logger.log('Could not parse refund transaction from email: ' + subject);
         continue;
       }
@@ -1304,6 +1318,7 @@ function _processEmailThread(thread) {
       );
       
       if (existingRefund) {
+        stats.existingEntries++;
         Logger.log('Existing Toshl refund found, skipping create: ' + refundDescription);
         _saveProcessedMessage(emailId, threadId, subject, 'existing_entry', transaction, existingRefund.id);
         thread.addLabel(processedLabel);
@@ -1318,6 +1333,7 @@ function _processEmailThread(thread) {
       );
       
       if (result) {
+        stats.processedRefunds++;
         _saveProcessedMessage(emailId, threadId, subject, 'refund_processed', transaction, result.id || null);
         thread.addLabel(processedLabel);
         Logger.log('✓ Successfully processed refund as income');
@@ -1329,6 +1345,7 @@ function _processEmailThread(thread) {
     const transaction = _parseTransaction(emailBody, emailDate);
     
     if (!transaction) {
+      stats.parseFailures++;
       Logger.log('Could not parse transaction from email: ' + subject);
       continue;
     }
@@ -1344,6 +1361,7 @@ function _processEmailThread(thread) {
       const pendingId = _savePendingTransaction(transaction, emailId);
       
       if (pendingId) {
+        stats.pendingSaved++;
         _saveProcessedMessage(emailId, threadId, subject, 'pending', transaction, null);
         thread.addLabel(pendingLabel);
         Logger.log('✓ Saved as pending transaction, waiting for category mapping');
@@ -1360,6 +1378,7 @@ function _processEmailThread(thread) {
       );
       
       if (existingExpense) {
+        stats.existingEntries++;
         Logger.log('Existing Toshl expense found, skipping create: ' + transaction.store);
         _saveProcessedMessage(emailId, threadId, subject, 'existing_entry', transaction, existingExpense.id);
         thread.addLabel(processedLabel);
@@ -1374,6 +1393,7 @@ function _processEmailThread(thread) {
       );
       
       if (result) {
+        stats.processedExpenses++;
         // Remove pending label if it exists
         const hasPending = labels.some(label => label.getName() === CONFIG.PENDING_LABEL);
         if (hasPending) {
@@ -1387,6 +1407,8 @@ function _processEmailThread(thread) {
       }
     }
   }
+
+  return stats;
 }
 
 /**
@@ -1844,10 +1866,28 @@ function _processHistoricalImportBatch(state) {
 
   const threads = GmailApp.search(searchQuery, state.offset, state.batchSize);
   let processedCount = 0;
+  const totals = {
+    messagesSeen: 0,
+    skippedUnsuccessful: 0,
+    alreadyHandled: 0,
+    parseFailures: 0,
+    pendingSaved: 0,
+    existingEntries: 0,
+    processedExpenses: 0,
+    processedRefunds: 0
+  };
 
   for (let thread of threads) {
     try {
-      _processEmailThread(thread);
+      const threadStats = _processEmailThread(thread) || {};
+      totals.messagesSeen += threadStats.messagesSeen || 0;
+      totals.skippedUnsuccessful += threadStats.skippedUnsuccessful || 0;
+      totals.alreadyHandled += threadStats.alreadyHandled || 0;
+      totals.parseFailures += threadStats.parseFailures || 0;
+      totals.pendingSaved += threadStats.pendingSaved || 0;
+      totals.existingEntries += threadStats.existingEntries || 0;
+      totals.processedExpenses += threadStats.processedExpenses || 0;
+      totals.processedRefunds += threadStats.processedRefunds || 0;
       processedCount++;
     } catch (e) {
       Logger.log('Error processing historical import thread: ' + e.toString());
@@ -1872,7 +1912,18 @@ function _processHistoricalImportBatch(state) {
   }
 
   _saveHistoricalImportState(state);
-  Logger.log('Historical import batch processed ' + processedCount + ' thread(s)');
+  Logger.log(
+    'Historical import batch summary: ' +
+    processedCount + ' thread(s) visited, ' +
+    totals.messagesSeen + ' message(s) checked, ' +
+    totals.alreadyHandled + ' already handled, ' +
+    totals.processedExpenses + ' expense(s) created, ' +
+    totals.processedRefunds + ' refund(s) created, ' +
+    totals.pendingSaved + ' pending, ' +
+    totals.existingEntries + ' existing-entry matches, ' +
+    totals.parseFailures + ' parse failures, ' +
+    totals.skippedUnsuccessful + ' unsuccessful skipped'
+  );
   return processedCount;
 }
 

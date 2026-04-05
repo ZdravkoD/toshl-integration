@@ -333,6 +333,38 @@ test('processes one historical import batch and advances offset within the same 
   assert.strictEqual(updated.totalProcessedThreads, 1);
 });
 
+test('historical import logs message-level batch summary', () => {
+  const { context, logs } = loadAppsScript({
+    gmailSearchImpl() {
+      return [{}, {}];
+    }
+  });
+
+  context._initializeHistoricalImport(
+    new Date('2025-01-01T00:00:00Z'),
+    new Date('2025-01-31T00:00:00Z'),
+    { batchSize: 2, windowDays: 7 }
+  );
+  context._processEmailThread = (thread) => ({
+    messagesSeen: thread ? 3 : 0,
+    skippedUnsuccessful: 0,
+    alreadyHandled: 2,
+    parseFailures: 0,
+    pendingSaved: 1,
+    existingEntries: 0,
+    processedExpenses: 0,
+    processedRefunds: 0
+  });
+
+  context._processHistoricalImportBatch(context._getHistoricalImportState());
+
+  assert.ok(
+    logs.some(log =>
+      log.includes('Historical import batch summary: 2 thread(s) visited, 6 message(s) checked, 4 already handled, 0 expense(s) created, 0 refund(s) created, 2 pending, 0 existing-entry matches, 0 parse failures, 0 unsuccessful skipped')
+    )
+  );
+});
+
 test('advances historical import cursor when a window is exhausted', () => {
   const { context } = loadAppsScript({
     gmailSearchImpl() {
