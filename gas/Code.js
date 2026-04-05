@@ -897,7 +897,7 @@ const TOSHL_API_BASE = 'https://api.toshl.com';
 function _createToshlExpense(amount, date, description, category) {
   // Get or create category ID
   const categoryId = _getOrCreateCategory(category);
-  const importTagId = _getOrCreateTag(CONFIG.IMPORT_TAG_NAME);
+  const importTagId = _getOrCreateTag(CONFIG.IMPORT_TAG_NAME, 'expense');
   
   // Prepare expense data
   const expenseData = {
@@ -963,7 +963,7 @@ function _createToshlExpense(amount, date, description, category) {
  * @private
  */
 function _createToshlIncome(amount, date, description) {
-  const importTagId = _getOrCreateTag(CONFIG.IMPORT_TAG_NAME);
+  const importTagId = _getOrCreateTag(CONFIG.IMPORT_TAG_NAME, 'income');
   
   // Prepare income data
   const incomeData = {
@@ -1061,15 +1061,24 @@ function _getOrCreateCategory(categoryName) {
  * Get or create a tag in Toshl Finance
  * @private
  */
-function _getOrCreateTag(tagName) {
+function _getOrCreateTag(tagName, tagType) {
   const tags = _getAllToshlTags();
-  const existingTag = tags.find(tag => tag.name && tag.name.toLowerCase() === tagName.toLowerCase());
+  const normalizedType = tagType || 'expense';
+  const existingTag = tags.find(tag =>
+    tag.name &&
+    tag.type &&
+    tag.name.toLowerCase() === tagName.toLowerCase() &&
+    tag.type === normalizedType
+  );
   
   if (existingTag) {
     return existingTag.id;
   }
   
-  const tagData = { name: tagName };
+  const tagData = {
+    name: tagName,
+    type: normalizedType
+  };
   const options = {
     method: 'post',
     contentType: 'application/json',
@@ -1085,7 +1094,7 @@ function _getOrCreateTag(tagName) {
     
     if (response.getResponseCode() === 201) {
       const newTag = JSON.parse(response.getContentText());
-      Logger.log('Created new tag: ' + tagName);
+      Logger.log('Created new tag: ' + tagName + ' [' + normalizedType + ']');
       return newTag.id;
     }
     

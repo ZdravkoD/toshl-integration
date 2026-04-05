@@ -154,6 +154,49 @@ test('matches existing Toshl refunds using positive amounts', () => {
   });
 });
 
+test('reuses an existing Toshl tag matching the requested type', () => {
+  const { context } = loadAppsScript({
+    fetchImpl() {
+      return {
+        statusCode: 200,
+        body: [
+          { id: 'expense-tag', name: 'gmail-import', type: 'expense' },
+          { id: 'income-tag', name: 'gmail-import', type: 'income' }
+        ]
+      };
+    }
+  });
+
+  assert.strictEqual(context._getOrCreateTag('gmail-import', 'income'), 'income-tag');
+});
+
+test('creates a Toshl tag with the required type when missing', () => {
+  let createPayload = null;
+  const { context } = loadAppsScript({
+    fetchImpl(url, requestOptions) {
+      if (url.endsWith('/tags') && requestOptions.method === 'get') {
+        return { statusCode: 200, body: [] };
+      }
+
+      if (url.endsWith('/tags') && requestOptions.method === 'post') {
+        createPayload = JSON.parse(requestOptions.payload);
+        return {
+          statusCode: 201,
+          body: { id: 'created-income-tag', name: 'gmail-import', type: 'income' }
+        };
+      }
+
+      throw new Error('Unexpected fetch call');
+    }
+  });
+
+  assert.strictEqual(context._getOrCreateTag('gmail-import', 'income'), 'created-income-tag');
+  assert.deepStrictEqual(createPayload, {
+    name: 'gmail-import',
+    type: 'income'
+  });
+});
+
 test('checks processed-message state through the web API', () => {
   const { context } = loadAppsScript({
     fetchImpl(url) {

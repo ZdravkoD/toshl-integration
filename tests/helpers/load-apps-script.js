@@ -120,6 +120,7 @@ function loadAppsScript(options = {}) {
       _extractStoreName,
       _extractDate,
       _findExistingToshlEntry,
+      _getOrCreateTag,
       _getHistoricalImportState,
       _initializeHistoricalImport,
       _processHistoricalImportBatch,
