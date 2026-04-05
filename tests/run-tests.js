@@ -115,6 +115,15 @@ test('normalizes Microsoft merchant variants to a single mapping key', () => {
   );
 });
 
+test('extracts 3-character merchant names after cleanup', () => {
+  const { context } = loadAppsScript();
+
+  assert.strictEqual(
+    context._extractStoreName('Успешна трансакция с кредитна карта от Пощенска банка Mastercard World Premium XX-4020 на стойност 40.34 EUR в WMF.\\\\SOFIA\\\\             BGR на 31.01.2026 18:26:42'),
+    'WMF'
+  );
+});
+
 test('extracts the transaction date from Postbank format', () => {
   const { context } = loadAppsScript();
   const result = context._extractDate(

@@ -276,7 +276,7 @@ function _cleanStoreName(store) {
   store = _normalizeStoreName(store);
   
   // Validate length
-  if (store.length > 3 && store.length < 100) {
+  if (store.length >= 3 && store.length < 100) {
     return store;
   }
   
