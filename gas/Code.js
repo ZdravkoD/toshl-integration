@@ -272,17 +272,46 @@ function _cleanStoreName(store) {
   
   // Remove trailing punctuation and whitespace
   store = store.replace(/[,;.\s\/\\]+$/, '').trim();
+
+  store = _normalizeStoreName(store);
   
   // Validate length
   if (store.length > 3 && store.length < 100) {
     return store;
   }
-
-  if (store.toLowerCase().startsWith("glovo")) {
-    return "Glovo";
-  }
   
   return null;
+}
+
+/**
+ * Normalize merchants that append unstable ids, dates, or branch numbers.
+ * This lets one mapping cover recurring variants like "Glovo 02DEC SO..." and
+ * "Microsoft-G123456789".
+ * @private
+ */
+function _normalizeStoreName(store) {
+  if (!store) return null;
+
+  const trimmed = store.trim();
+  const upper = trimmed.toUpperCase();
+
+  if (upper.startsWith('GLOVO ')) {
+    return 'Glovo';
+  }
+
+  if (upper === 'GLOVO') {
+    return 'Glovo';
+  }
+
+  if (upper.startsWith('BILLA ')) {
+    return 'BILLA';
+  }
+
+  if (upper.startsWith('MICROSOFT-') || upper.startsWith('MICROSOFT#')) {
+    return 'Microsoft';
+  }
+
+  return trimmed;
 }
 
 /**
@@ -875,6 +904,8 @@ function _markPendingAsProcessed(pendingId) {
  * @private
  */
 function _getCategory(storeName) {
+  storeName = _normalizeStoreName(storeName);
+
   // Get from Web API which connects to MongoDB
   const category = _getCategoryFromWebAPI(storeName);
   
@@ -1521,6 +1552,8 @@ function processPendingTransactions() {
   
   for (let pending of unprocessedTransactions) {
     try {
+      const normalizedStoreName = _normalizeStoreName(pending.store_name);
+
       Logger.log('Processing pending: ' + pending.store_name);
       
       // Check if this needs a description but doesn't have one yet
@@ -1530,13 +1563,13 @@ function processPendingTransactions() {
       }
       
       // Check if category mapping now exists
-      const category = _getCategory(pending.store_name);
+      const category = _getCategory(normalizedStoreName);
       
       if (category) {
-        Logger.log('✓ Found category mapping: ' + pending.store_name + ' → ' + category);
+        Logger.log('✓ Found category mapping: ' + normalizedStoreName + ' → ' + category);
         
-        // Prepare description (use custom description if available, otherwise store name)
-        const description = pending.description || pending.store_name;
+        // Prepare description (use custom description if available, otherwise normalized store name)
+        const description = pending.description || normalizedStoreName;
         
         // Create expense in Toshl
         const result = _createToshlExpense(

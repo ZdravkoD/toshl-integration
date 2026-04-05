@@ -88,6 +88,33 @@ test('extracts and cleans merchant name from English Postbank emails', () => {
   assert.strictEqual(store, 'MR. BRICOLAGE SOFIA 3');
 });
 
+test('normalizes Glovo merchant variants to a single mapping key', () => {
+  const { context } = loadAppsScript();
+
+  assert.strictEqual(
+    context._extractStoreName('Successful transaction for amount 30.54 EUR at Glovo 20JAN SOW9FFZR2. 20.01.2026 12:00:00'),
+    'Glovo'
+  );
+});
+
+test('normalizes BILLA merchant variants to a single mapping key', () => {
+  const { context } = loadAppsScript();
+
+  assert.strictEqual(
+    context._extractStoreName('Successful transaction for amount 20.43 EUR at BILLA 259 06. 01.02.2026 12:00:00'),
+    'BILLA'
+  );
+});
+
+test('normalizes Microsoft merchant variants to a single mapping key', () => {
+  const { context } = loadAppsScript();
+
+  assert.strictEqual(
+    context._extractStoreName('Successful transaction for amount 25.86 EUR at Microsoft-G140159420. 09.02.2026 12:00:00'),
+    'Microsoft'
+  );
+});
+
 test('extracts the transaction date from Postbank format', () => {
   const { context } = loadAppsScript();
   const result = context._extractDate(
@@ -210,6 +237,17 @@ test('checks processed-message state through the web API', () => {
   });
 
   assert.strictEqual(context._isMessageHandled('msg-123'), true);
+});
+
+test('normalizes merchant names before category lookup', () => {
+  const { context } = loadAppsScript({
+    fetchImpl(url) {
+      assert.ok(url.includes('/getCategory?store_name=Microsoft'));
+      return { statusCode: 200, body: { category: 'General' } };
+    }
+  });
+
+  assert.strictEqual(context._getCategory('Microsoft-G128027668'), 'General');
 });
 
 test('saves processed-message metadata through the web API', () => {
