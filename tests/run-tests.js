@@ -417,6 +417,27 @@ test('historical import uses a monthly window by default', () => {
   assert.strictEqual(capturedQuery.start, 0);
 });
 
+test('historical import clamps monthly windows at month end', () => {
+  let capturedQuery = null;
+  const { context } = loadAppsScript({
+    gmailSearchImpl(query, start, max) {
+      capturedQuery = { query, start, max };
+      return [];
+    }
+  });
+
+  context._initializeHistoricalImport(
+    new Date('2025-01-31T00:00:00Z'),
+    new Date('2025-03-31T00:00:00Z')
+  );
+
+  context._processHistoricalImportBatch(context._getHistoricalImportState());
+
+  assert.ok(capturedQuery.query.includes('after:2025/01/31'));
+  assert.ok(capturedQuery.query.includes('before:2025/02/28'));
+  assert.strictEqual(capturedQuery.start, 0);
+});
+
 test('continueHistoricalImport upgrades old weekly state to monthly windows', () => {
   let capturedQuery = null;
   const { context } = loadAppsScript({
@@ -439,6 +460,36 @@ test('continueHistoricalImport upgrades old weekly state to monthly windows', ()
   assert.strictEqual(updated.windowMonths, 1);
   assert.ok(capturedQuery.includes('after:2025/01/14'));
   assert.ok(capturedQuery.includes('before:2025/02/14'));
+});
+
+test('continueHistoricalImport preserves weekly windows while mid-offset', () => {
+  let capturedQuery = null;
+  const { context } = loadAppsScript({
+    gmailSearchImpl(query, start, max) {
+      capturedQuery = { query, start, max };
+      return [];
+    }
+  });
+
+  context._initializeHistoricalImport(
+    new Date('2025-01-14T00:00:00Z'),
+    new Date('2025-03-31T00:00:00Z'),
+    { batchSize: 25, windowDays: 7 }
+  );
+
+  const state = context._getHistoricalImportState();
+  state.offset = 25;
+  context._saveHistoricalImportState(state);
+
+  context.continueHistoricalImport();
+  const updated = context._getHistoricalImportState();
+
+  assert.strictEqual(updated.windowDays, 7);
+  assert.strictEqual(updated.windowMonths, null);
+  assert.strictEqual(capturedQuery.start, 25);
+  assert.strictEqual(capturedQuery.max, 25);
+  assert.ok(capturedQuery.query.includes('after:2025/01/14'));
+  assert.ok(capturedQuery.query.includes('before:2025/01/21'));
 });
 
 test('advances historical import cursor when a window is exhausted', () => {

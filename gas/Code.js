@@ -1780,7 +1780,14 @@ function _addDays(date, days) {
  */
 function _addMonths(date, months) {
   const next = new Date(date);
+  const originalDay = next.getDate();
+
+  next.setDate(1);
   next.setMonth(next.getMonth() + months);
+
+  const lastDayOfTargetMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(originalDay, lastDayOfTargetMonth));
+
   return next;
 }
 
@@ -1998,10 +2005,15 @@ function continueHistoricalImport() {
   }
 
   if (!state.windowMonths || state.windowMonths < 1) {
-    state.windowMonths = 1;
-    state.windowDays = null;
-    _saveHistoricalImportState(state);
-    Logger.log('Upgraded historical import window to 1 month');
+    if (state.windowDays && state.offset > 0) {
+      Logger.log('Historical import is mid-window; preserving weekly window until the current batch completes');
+    } else {
+      state.windowMonths = 1;
+      state.windowDays = null;
+      state.offset = 0;
+      _saveHistoricalImportState(state);
+      Logger.log('Upgraded historical import window to 1 month');
+    }
   }
 
   const processedCount = _processHistoricalImportBatch(state);
