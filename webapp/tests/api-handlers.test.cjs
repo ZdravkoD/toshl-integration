@@ -1075,6 +1075,149 @@ test('sync mirror stores entry amounts normalized to EUR', async () => {
   assert.equal(capturedEntryUpdate.$set.original_currency_code, 'BGN');
 });
 
+test('sync mirror falls back to the BGN fixed conversion rate when Toshl omits one', async () => {
+  const { syncToshlMirror } = loadTsModule('lib/toshlSync.ts', {
+    './toshl': {
+      fetchToshlCollection: async (path) => {
+        if (path === '/accounts') {
+          return [{ id: 'acc-1', name: 'Cash', currency: { code: 'EUR' } }];
+        }
+
+        if (path === '/categories') {
+          return [{ id: 'cat-1', name: 'General', type: 'expense' }];
+        }
+
+        if (path === '/tags') {
+          return [];
+        }
+
+        if (path === '/entries') {
+          return [
+            {
+              id: 'entry-bgn-fallback',
+              amount: 191000,
+              date: '2026-04-05',
+              currency: { code: 'BGN' },
+              account: 'acc-1',
+              category: 'cat-1'
+            }
+          ];
+        }
+
+        throw new Error(`Unexpected path ${path}`);
+      },
+      todayIsoDate: () => '2026-04-05'
+    }
+  });
+
+  let capturedEntryUpdate;
+
+  const db = {
+    collection(name) {
+      if (name === 'sync_locks') {
+        return {
+          createIndex: async () => {},
+          deleteMany: async () => {},
+          insertOne: async () => {},
+          deleteOne: async () => {}
+        };
+      }
+
+      if (name === 'sync_state') {
+        return {
+          createIndex: async () => {},
+          findOne: async () => null,
+          updateOne: async () => ({})
+        };
+      }
+
+      if (name === 'toshl_entries') {
+        return {
+          createIndex: async () => {},
+          updateOne: async (_filter, update) => {
+            capturedEntryUpdate = update;
+            return { upsertedCount: 1, modifiedCount: 0 };
+          },
+          deleteMany: async () => ({ deletedCount: 0 })
+        };
+      }
+
+      return {
+        createIndex: async () => {},
+        updateOne: async () => ({ upsertedCount: 1, modifiedCount: 0 }),
+        deleteMany: async () => ({ deletedCount: 0 })
+      };
+    }
+  };
+
+  await syncToshlMirror(db, {
+    startDate: '2026-04-01',
+    endDate: '2026-04-05'
+  });
+
+  assert.equal(capturedEntryUpdate.$set.amount, 97656.75);
+  assert.equal(capturedEntryUpdate.$set.currency_code, 'EUR');
+  assert.equal(capturedEntryUpdate.$set.original_amount, 191000);
+  assert.equal(capturedEntryUpdate.$set.original_currency_code, 'BGN');
+});
+
+test('sync mirror rejects non-EUR entries without a usable conversion rate', async () => {
+  const { syncToshlMirror } = loadTsModule('lib/toshlSync.ts', {
+    './toshl': {
+      fetchToshlCollection: async (path) => {
+        if (path === '/accounts') {
+          return [{ id: 'acc-1', name: 'Cash', currency: { code: 'EUR' } }];
+        }
+
+        if (path === '/categories') {
+          return [{ id: 'cat-1', name: 'General', type: 'expense' }];
+        }
+
+        if (path === '/tags') {
+          return [];
+        }
+
+        if (path === '/entries') {
+          return [
+            {
+              id: 'entry-usd-missing-rate',
+              amount: 10,
+              date: '2026-04-05',
+              currency: { code: 'USD' },
+              account: 'acc-1',
+              category: 'cat-1'
+            }
+          ];
+        }
+
+        throw new Error(`Unexpected path ${path}`);
+      },
+      todayIsoDate: () => '2026-04-05'
+    }
+  });
+
+  const db = {
+    collection() {
+      return {
+        createIndex: async () => {},
+        deleteMany: async () => ({ deletedCount: 0 }),
+        insertOne: async () => {},
+        deleteOne: async () => {},
+        findOne: async () => null,
+        updateOne: async () => ({ upsertedCount: 1, modifiedCount: 0 })
+      };
+    }
+  };
+
+  await assert.rejects(
+    syncToshlMirror(db, {
+      startDate: '2026-04-01',
+      endDate: '2026-04-05'
+    }),
+    /Cannot normalize non-EUR entry entry-usd-missing-rate/
+  );
+});
+
 test('syncStatus returns sorted sync resources and active lock state', async () => {
   const handler = loadApiHandler('pages/api/syncStatus.ts', {
     '../../lib/mongodb': {

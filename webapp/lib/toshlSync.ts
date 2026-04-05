@@ -21,6 +21,9 @@ const DEFAULT_RECONCILE_DAYS = 90;
 const OVERALL_SYNC_LOCK_KEY = 'toshl-full-sync';
 const DEFAULT_LOCK_TTL_MS = 10 * 60 * 1000;
 const IGNORED_CATEGORY_IDS = new Set(['reconciliation']);
+const FALLBACK_EUR_RATES: Record<string, number> = {
+  BGN: 1 / 1.95583
+};
 
 export interface SyncRequestOptions {
   startDate?: string;
@@ -112,10 +115,20 @@ function convertAmountToEur(entry: ToshlEntry) {
   }
 
   if (currencyCode && currencyCode !== 'EUR') {
-    console.warn('[toshl-sync] missing conversion rate for non-EUR entry, preserving numeric amount', {
-      entryId: entry.id,
-      currencyCode
-    });
+    const fallbackRate = FALLBACK_EUR_RATES[currencyCode];
+
+    if (typeof fallbackRate === 'number' && Number.isFinite(fallbackRate)) {
+      console.warn('[toshl-sync] using fallback EUR conversion rate for entry', {
+        entryId: entry.id,
+        currencyCode,
+        fallbackRate
+      });
+      return roundCurrency(amount * fallbackRate);
+    }
+
+    throw new Error(
+      `Cannot normalize non-EUR entry ${entry.id} (${currencyCode}) without a Toshl conversion rate`
+    );
   }
 
   return roundCurrency(amount);
