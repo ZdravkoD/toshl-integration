@@ -492,49 +492,84 @@ export async function getMonthlyBalanceReport(
 ) {
   const from = coerceIsoDate(options.from, DEFAULT_SYNC_START_DATE);
   const to = coerceIsoDate(options.to, todayIsoDate());
-  const documents = await db.collection(ENTRIES_COLLECTION)
-    .find({
-      date: { $gte: from, $lte: to },
-      is_deleted: { $ne: true }
-    })
-    .sort({ date: 1, toshl_id: 1 })
+  const monthlyRows = await db.collection(ENTRIES_COLLECTION)
+    .aggregate([
+      {
+        $match: {
+          date: { $gte: from, $lte: to },
+          is_deleted: { $ne: true }
+        }
+      },
+      {
+        $group: {
+          _id: { $substr: ['$date', 0, 7] },
+          income: {
+            $sum: {
+              $cond: [
+                { $eq: ['$entry_type', 'income'] },
+                '$amount_eur',
+                0
+              ]
+            }
+          },
+          expense: {
+            $sum: {
+              $cond: [
+                { $eq: ['$entry_type', 'expense'] },
+                { $abs: '$amount_eur' },
+                0
+              ]
+            }
+          },
+          transfer: {
+            $sum: {
+              $cond: [
+                { $eq: ['$entry_type', 'transaction'] },
+                '$amount_eur',
+                0
+              ]
+            }
+          },
+          net: {
+            $sum: {
+              $cond: [
+                { $in: ['$entry_type', ['income', 'expense']] },
+                '$amount_eur',
+                0
+              ]
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          month: '$_id',
+          income: { $round: ['$income', 2] },
+          expense: { $round: ['$expense', 2] },
+          transfer: { $round: ['$transfer', 2] },
+          net: { $round: ['$net', 2] }
+        }
+      },
+      {
+        $sort: { month: 1 }
+      }
+    ])
     .toArray();
-  console.log('[toshl-report] loaded mirrored entries', {
+
+  console.log('[toshl-report] loaded monthly aggregates', {
     from,
     to,
-    count: documents.length
+    count: monthlyRows.length
   });
 
-  const months = new Map<string, Omit<MonthlyBalanceRow, 'balance'>>();
-
-  documents.forEach((entryDoc: any) => {
-    const month = monthKeyFromDate(entryDoc.date);
-    const current = months.get(month) || {
-      month,
-      income: 0,
-      expense: 0,
-      transfer: 0,
-      net: 0
-    };
-    const amountEur = roundCurrency(Number(entryDoc.amount_eur ?? entryDoc.amount ?? 0));
-    const entryType = entryDoc.entry_type;
-
-    if (entryType === 'income') {
-      current.income = roundCurrency(current.income + amountEur);
-      current.net = roundCurrency(current.net + amountEur);
-    } else if (entryType === 'expense') {
-      current.expense = roundCurrency(current.expense + Math.abs(amountEur));
-      current.net = roundCurrency(current.net + amountEur);
-    } else if (entryType === 'transaction') {
-      current.transfer = roundCurrency(current.transfer + amountEur);
-    }
-
-    months.set(month, current);
-  });
-
-  const rows = Array.from(months.values())
-    .sort((a, b) => a.month.localeCompare(b.month))
-    .map(row => row);
+  const rows = monthlyRows.map((row: any) => ({
+    month: row.month,
+    income: roundCurrency(Number(row.income || 0)),
+    expense: roundCurrency(Number(row.expense || 0)),
+    transfer: roundCurrency(Number(row.transfer || 0)),
+    net: roundCurrency(Number(row.net || 0))
+  }));
 
   let runningBalance = 0;
   const data: MonthlyBalanceRow[] = rows.map(row => {

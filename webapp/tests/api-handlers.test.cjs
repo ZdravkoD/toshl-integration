@@ -817,43 +817,34 @@ test('monthly balance report aggregates entries from Mongo and excludes transfer
     collection(name) {
       assert.equal(name, 'toshl_entries');
       return {
-        find(query) {
-          assert.deepEqual(query, {
-            date: { $gte: '2025-01-01', $lte: '2025-02-28' },
-            is_deleted: { $ne: true }
-          });
-          return {
-            sort() {
-              return {
-                toArray: async () => [
-                  {
-                    date: '2025-01-05',
-                    entry_type: 'income',
-                    amount_eur: 1000
-                  },
-                  {
-                    date: '2025-01-12',
-                    entry_type: 'expense',
-                    amount_eur: -250
-                  },
-                  {
-                    date: '2025-01-20',
-                    entry_type: 'transaction',
-                    amount_eur: -800
-                  },
-                  {
-                    date: '2025-02-10',
-                    entry_type: 'expense',
-                    amount_eur: -100
-                  },
-                  {
-                    date: '2025-02-14',
-                    entry_type: 'income',
-                    amount_eur: 50
-                  }
-                ]
-              };
+        aggregate(pipeline) {
+          assert.deepEqual(pipeline[0], {
+            $match: {
+              date: { $gte: '2025-01-01', $lte: '2025-02-28' },
+              is_deleted: { $ne: true }
             }
+          });
+          assert.deepEqual(pipeline[pipeline.length - 1], {
+            $sort: { month: 1 }
+          });
+
+          return {
+            toArray: async () => [
+              {
+                month: '2025-01',
+                income: 1000,
+                expense: 250,
+                transfer: -800,
+                net: 750
+              },
+              {
+                month: '2025-02',
+                income: 50,
+                expense: 100,
+                transfer: 0,
+                net: -50
+              }
+            ]
           };
         }
       };
