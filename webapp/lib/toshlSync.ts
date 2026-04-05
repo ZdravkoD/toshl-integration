@@ -108,9 +108,18 @@ function convertAmountToEur(entry: ToshlEntry) {
     return roundCurrency(amount);
   }
 
+  if (currencyCode === 'BGN') {
+    return roundCurrency(amount * FALLBACK_EUR_RATES.BGN);
+  }
+
   const conversionRate = entry.currency?.main_rate ?? entry.currency?.rate;
 
-  if (typeof conversionRate === 'number' && Number.isFinite(conversionRate)) {
+  if (
+    typeof conversionRate === 'number' &&
+    Number.isFinite(conversionRate) &&
+    conversionRate > 0 &&
+    conversionRate !== 1
+  ) {
     return roundCurrency(amount * conversionRate);
   }
 

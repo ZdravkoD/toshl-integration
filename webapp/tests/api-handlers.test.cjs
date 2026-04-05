@@ -1068,8 +1068,8 @@ test('sync mirror stores entry amounts normalized to EUR', async () => {
     endDate: '2026-04-05'
   });
 
-  assert.equal(capturedEntryUpdate.$set.amount, -51.1);
-  assert.equal(capturedEntryUpdate.$set.amount_eur, -51.1);
+  assert.equal(capturedEntryUpdate.$set.amount, -51.13);
+  assert.equal(capturedEntryUpdate.$set.amount_eur, -51.13);
   assert.equal(capturedEntryUpdate.$set.currency_code, 'EUR');
   assert.equal(capturedEntryUpdate.$set.original_amount, -100);
   assert.equal(capturedEntryUpdate.$set.original_currency_code, 'BGN');
@@ -1158,6 +1158,93 @@ test('sync mirror falls back to the BGN fixed conversion rate when Toshl omits o
   assert.equal(capturedEntryUpdate.$set.amount, 97656.75);
   assert.equal(capturedEntryUpdate.$set.currency_code, 'EUR');
   assert.equal(capturedEntryUpdate.$set.original_amount, 191000);
+  assert.equal(capturedEntryUpdate.$set.original_currency_code, 'BGN');
+});
+
+test('sync mirror ignores Toshl rate=1 for BGN entries and still converts to EUR', async () => {
+  const { syncToshlMirror } = loadTsModule('lib/toshlSync.ts', {
+    './toshl': {
+      fetchToshlCollection: async (path) => {
+        if (path === '/accounts') {
+          return [{ id: 'acc-1', name: 'Cash', currency: { code: 'BGN' } }];
+        }
+
+        if (path === '/categories') {
+          return [{ id: 'cat-1', name: 'General', type: 'expense' }];
+        }
+
+        if (path === '/tags') {
+          return [];
+        }
+
+        if (path === '/entries') {
+          return [
+            {
+              id: 'entry-bgn-rate-one',
+              amount: 117349.8,
+              date: '2025-05-28',
+              currency: { code: 'BGN', rate: 1, main_rate: 1, fixed: false },
+              account: 'acc-1',
+              category: 'cat-1'
+            }
+          ];
+        }
+
+        throw new Error(`Unexpected path ${path}`);
+      },
+      todayIsoDate: () => '2026-04-05'
+    }
+  });
+
+  let capturedEntryUpdate;
+
+  const db = {
+    collection(name) {
+      if (name === 'sync_locks') {
+        return {
+          createIndex: async () => {},
+          deleteMany: async () => ({ deletedCount: 0 }),
+          insertOne: async () => {},
+          deleteOne: async () => {}
+        };
+      }
+
+      if (name === 'sync_state') {
+        return {
+          createIndex: async () => {},
+          findOne: async () => null,
+          updateOne: async () => ({})
+        };
+      }
+
+      if (name === 'toshl_entries') {
+        return {
+          createIndex: async () => {},
+          updateOne: async (_filter, update) => {
+            capturedEntryUpdate = update;
+            return { upsertedCount: 1, modifiedCount: 0 };
+          },
+          deleteMany: async () => ({ deletedCount: 0 })
+        };
+      }
+
+      return {
+        createIndex: async () => {},
+        updateOne: async () => ({ upsertedCount: 1, modifiedCount: 0 }),
+        deleteMany: async () => ({ deletedCount: 0 })
+      };
+    }
+  };
+
+  await syncToshlMirror(db, {
+    startDate: '2025-05-01',
+    endDate: '2025-05-31'
+  });
+
+  assert.equal(capturedEntryUpdate.$set.amount, 60000);
+  assert.equal(capturedEntryUpdate.$set.amount_eur, 60000);
+  assert.equal(capturedEntryUpdate.$set.currency_code, 'EUR');
+  assert.equal(capturedEntryUpdate.$set.original_amount, 117349.8);
   assert.equal(capturedEntryUpdate.$set.original_currency_code, 'BGN');
 });
 
