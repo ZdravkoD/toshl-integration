@@ -31,4 +31,8 @@ webapp/next-env.d.ts
 
 # Generated local reports and audit output
 reports/
+!webapp/pages/reports/
+!webapp/pages/reports/**
+!webapp/pages/api/reports/
+!webapp/pages/api/reports/**
 scripts/duplicates/output/

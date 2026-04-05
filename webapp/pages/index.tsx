@@ -138,8 +138,8 @@ export default function Home() {
           <button className={`${styles.navButton} ${styles.secondary}`} onClick={() => router.push('/merchants')}>
             Manage Mappings
           </button>
-          <button className={`${styles.navButton} ${styles.secondary}`} onClick={() => router.push('/reports/monthly-balance')}>
-            Monthly Balance Report
+          <button className={`${styles.navButton} ${styles.secondary}`} onClick={() => router.push('/reports')}>
+            Reports
           </button>
         </nav>
 
@@ -209,9 +209,9 @@ export default function Home() {
             </button>
             <button
               className={styles.button}
-              onClick={() => router.push('/reports/monthly-balance')}
+              onClick={() => router.push('/reports')}
             >
-              Open Monthly Balance Report
+              Open Reports
             </button>
           </div>
         </div>

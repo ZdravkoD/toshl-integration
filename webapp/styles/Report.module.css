@@ -61,7 +61,7 @@
 .filterRow {
   display: flex;
   gap: 12px;
-  align-items: end;
+  align-items: flex-end;
   flex-wrap: wrap;
 }
 
@@ -269,6 +269,129 @@
   overflow-x: auto;
 }
 
+.actionsRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.selectorGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.selectorCard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+  background: rgba(255, 252, 247, 0.9);
+  border: 1px solid rgba(31, 41, 51, 0.08);
+  border-radius: 24px;
+  box-shadow: 0 24px 60px rgba(31, 41, 51, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.selectorCardMuted {
+  opacity: 0.8;
+}
+
+.selectorTitleRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.selectorTitle {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.selectorDescription {
+  margin: 8px 0 0;
+  color: #5f6c76;
+  line-height: 1.5;
+}
+
+.selectorMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.selectorChip,
+.selectorChipMuted {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.selectorChip {
+  background: rgba(15, 118, 110, 0.12);
+  color: #115e59;
+}
+
+.selectorChipMuted {
+  background: rgba(148, 163, 184, 0.18);
+  color: #475569;
+}
+
+.selectorActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chartLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(31, 41, 51, 0.08);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.legendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.calloutList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.calloutListRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 0.92rem;
+}
+
+.calloutLabel {
+  color: #cbd5e1;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -320,6 +443,10 @@
   .statsGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .selectorGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -346,5 +473,9 @@
 
   .input {
     min-width: 100%;
+  }
+
+  .actionsRow {
+    flex-direction: column;
   }
 }

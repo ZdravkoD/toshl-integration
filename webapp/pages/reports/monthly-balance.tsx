@@ -137,9 +137,14 @@ export default function MonthlyBalanceReportPage() {
             </p>
           </div>
 
-          <button className={styles.ghostButton} onClick={() => router.push('/')}>
-            Back To Home
-          </button>
+          <div className={styles.actionsRow}>
+            <button className={styles.ghostButton} onClick={() => router.push('/reports')}>
+              All Reports
+            </button>
+            <button className={styles.ghostButton} onClick={() => router.push('/')}>
+              Back To Home
+            </button>
+          </div>
         </div>
 
         <div className={styles.filterCard}>

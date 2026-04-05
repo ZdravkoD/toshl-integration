@@ -61,6 +61,21 @@ export interface MonthlyBalanceRow {
   balance: number;
 }
 
+export interface CategorySpendTrendSeries {
+  category: string;
+  total: number;
+  averageMonthly: number;
+}
+
+export interface CategorySpendTrendRow {
+  month: string;
+  total: number;
+  values: Array<{
+    category: string;
+    amount: number;
+  }>;
+}
+
 function roundCurrency(amount: number) {
   return Math.round(amount * 100) / 100;
 }
@@ -333,6 +348,19 @@ function monthKeyFromDate(dateIso: string) {
   return dateIso.slice(0, 7);
 }
 
+function listMonthKeys(from: string, to: string) {
+  const months: string[] = [];
+  const cursor = new Date(`${from.slice(0, 7)}-01T00:00:00Z`);
+  const end = new Date(`${to.slice(0, 7)}-01T00:00:00Z`);
+
+  while (cursor <= end) {
+    months.push(cursor.toISOString().slice(0, 7));
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+
+  return months;
+}
+
 export async function syncToshlMirror(db: Db, options: SyncRequestOptions = {}): Promise<SyncRunResult> {
   await ensureIndexes(db);
   const releaseLock = await acquireSyncLock(db, OVERALL_SYNC_LOCK_KEY);
@@ -602,5 +630,141 @@ export async function getMonthlyBalanceReport(
     bestMonth: bestMonth?.month || null,
     worstMonth: worstMonth?.month || null,
     rows: data
+  };
+}
+
+export async function getCategorySpendTrendReport(
+  db: Db,
+  options: { from?: string; to?: string; limit?: number } = {}
+) {
+  const from = coerceIsoDate(options.from, DEFAULT_SYNC_START_DATE);
+  const to = coerceIsoDate(options.to, todayIsoDate());
+  const limit = Math.max(2, Math.min(Number(options.limit || 5), 8));
+
+  const rawRows = await db.collection(ENTRIES_COLLECTION)
+    .aggregate([
+      {
+        $match: {
+          date: { $gte: from, $lte: to },
+          entry_type: 'expense',
+          is_deleted: { $ne: true }
+        }
+      },
+      {
+        $project: {
+          month: { $substr: ['$date', 0, 7] },
+          category: {
+            $ifNull: ['$category_name', 'Uncategorized']
+          },
+          amount: { $abs: '$amount_eur' }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            month: '$month',
+            category: '$category'
+          },
+          amount: { $sum: '$amount' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          month: '$_id.month',
+          category: '$_id.category',
+          amount: { $round: ['$amount', 2] }
+        }
+      },
+      {
+        $sort: {
+          month: 1,
+          amount: -1
+        }
+      }
+    ])
+    .toArray() as Array<{ month: string; category: string; amount: number }>;
+
+  console.log('[toshl-report] loaded category spend trend', {
+    from,
+    to,
+    count: rawRows.length,
+    limit
+  });
+
+  const categoryTotals = new Map<string, number>();
+  const monthCategoryValues = new Map<string, Map<string, number>>();
+
+  rawRows.forEach((row) => {
+    const category = row.category || 'Uncategorized';
+    categoryTotals.set(category, roundCurrency((categoryTotals.get(category) || 0) + Number(row.amount || 0)));
+
+    const valuesForMonth = monthCategoryValues.get(row.month) || new Map<string, number>();
+    valuesForMonth.set(category, roundCurrency(Number(row.amount || 0)));
+    monthCategoryValues.set(row.month, valuesForMonth);
+  });
+
+  const rankedCategories = Array.from(categoryTotals.entries())
+    .sort((left, right) => right[1] - left[1]);
+  const topCategoryNames = rankedCategories.slice(0, limit).map(([category]) => category);
+  const remainingCategories = rankedCategories.slice(limit);
+  const hasOther = remainingCategories.length > 0;
+  const seriesNames = hasOther ? [...topCategoryNames, 'Other'] : topCategoryNames;
+  const months = listMonthKeys(from, to);
+
+  const rows: CategorySpendTrendRow[] = months.map((month) => {
+    const valuesForMonth = monthCategoryValues.get(month) || new Map<string, number>();
+    const topValues = topCategoryNames.map((category) => ({
+      category,
+      amount: roundCurrency(valuesForMonth.get(category) || 0)
+    }));
+    const otherAmount = hasOther
+      ? remainingCategories.reduce((sum, [category]) => sum + (valuesForMonth.get(category) || 0), 0)
+      : 0;
+    const values = hasOther
+      ? [...topValues, { category: 'Other', amount: roundCurrency(otherAmount) }]
+      : topValues;
+    const total = values.reduce((sum, item) => sum + item.amount, 0);
+
+    return {
+      month,
+      total: roundCurrency(total),
+      values
+    };
+  });
+
+  const monthCount = Math.max(months.length, 1);
+  const series: CategorySpendTrendSeries[] = seriesNames.map((category) => {
+    const total = roundCurrency(rows.reduce((sum, row) => {
+      const match = row.values.find((value) => value.category === category);
+      return sum + (match?.amount || 0);
+    }, 0));
+
+    return {
+      category,
+      total,
+      averageMonthly: roundCurrency(total / monthCount)
+    };
+  }).sort((left, right) => right.total - left.total);
+
+  const totalSpend = roundCurrency(rows.reduce((sum, row) => sum + row.total, 0));
+  const topCategory = series.find((item) => item.category !== 'Other') || series[0] || null;
+  const highestMonth = rows.reduce<CategorySpendTrendRow | null>((best, row) => {
+    if (!best || row.total > best.total) {
+      return row;
+    }
+    return best;
+  }, null);
+
+  return {
+    currency: 'EUR',
+    from,
+    to,
+    totalSpend,
+    averageMonthlySpend: roundCurrency(totalSpend / monthCount),
+    topCategory: topCategory?.category || null,
+    highestMonth: highestMonth?.month || null,
+    categories: series,
+    rows
   };
 }
