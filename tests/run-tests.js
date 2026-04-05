@@ -69,7 +69,7 @@ test('extracts Postbank Bulgarian amount and currency', () => {
 
 test('extracts Postbank English amount and currency', () => {
   const { context } = loadAppsScript();
-  const result = context._extractAmountAndCurrency('Successful transaction for amount 28.00 EUR at WODATA');
+  const result = context._extractAmountAndCurrency('Successful transaction for amount 28.00 EUR at SAMPLE STORE');
 
   assert.deepStrictEqual(normalize(result), { amount: 28, currency: 'EUR' });
 });
@@ -77,7 +77,7 @@ test('extracts Postbank English amount and currency', () => {
 test('extracts Postbank amounts with spaces as thousands separators', () => {
   const { context } = loadAppsScript();
   const result = context._extractAmountAndCurrency(
-    'Успешна трансакция с кредитна карта от Пощенска банка Mastercard World Premium XX-4020 на стойност 4 600.00 EUR в MBAL SVETA SOFIYA EOOD\\MBAL SVETA SOFIYA на 20.02.2026 09:15:44'
+    'Успешна трансакция с кредитна карта от Пощенска банка Mastercard World Premium XX-4020 на стойност 4 600.00 EUR в EXAMPLE MEDICAL CENTER EOOD\\EXAMPLE MEDICAL CENTER на 20.02.2026 09:15:44'
   );
 
   assert.deepStrictEqual(normalize(result), { amount: 4600, currency: 'EUR' });
@@ -85,23 +85,23 @@ test('extracts Postbank amounts with spaces as thousands separators', () => {
 
 test('extracts and cleans merchant name from Bulgarian Postbank emails', () => {
   const { context } = loadAppsScript();
-  const store = context._extractStoreName('Успешна трансакция в MR. BRICOLAGE SOFIA 3\\MR. BRICOLAGE SOFI на 07.11.2025 20:03:38');
+  const store = context._extractStoreName('Успешна трансакция в SAMPLE HOME STORE 3\\SAMPLE HOME STORE на 07.11.2025 20:03:38');
 
-  assert.strictEqual(store, 'MR. BRICOLAGE SOFIA 3');
+  assert.strictEqual(store, 'SAMPLE HOME STORE 3');
 });
 
 test('extracts and cleans merchant name from English Postbank emails', () => {
   const { context } = loadAppsScript();
-  const store = context._extractStoreName('Successfull transaction for amount 665.15 BGN at MR. BRICOLAGE SOFIA 3\\MR. BRICOLAGE SOFI. 07.11.2025 20:03:38');
+  const store = context._extractStoreName('Successfull transaction for amount 665.15 BGN at SAMPLE HOME STORE 3\\SAMPLE HOME STORE. 07.11.2025 20:03:38');
 
-  assert.strictEqual(store, 'MR. BRICOLAGE SOFIA 3');
+  assert.strictEqual(store, 'SAMPLE HOME STORE 3');
 });
 
 test('normalizes Glovo merchant variants to a single mapping key', () => {
   const { context } = loadAppsScript();
 
   assert.strictEqual(
-    context._extractStoreName('Successful transaction for amount 30.54 EUR at Glovo 20JAN SOW9FFZR2. 20.01.2026 12:00:00'),
+    context._extractStoreName('Successful transaction for amount 30.54 EUR at Glovo 20JAN SAMPLE123. 20.01.2026 12:00:00'),
     'Glovo'
   );
 });
@@ -110,7 +110,7 @@ test('normalizes BILLA merchant variants to a single mapping key', () => {
   const { context } = loadAppsScript();
 
   assert.strictEqual(
-    context._extractStoreName('Successful transaction for amount 20.43 EUR at BILLA 259 06. 01.02.2026 12:00:00'),
+    context._extractStoreName('Successful transaction for amount 20.43 EUR at BILLA 999 99. 01.02.2026 12:00:00'),
     'BILLA'
   );
 });
@@ -119,7 +119,7 @@ test('normalizes Microsoft merchant variants to a single mapping key', () => {
   const { context } = loadAppsScript();
 
   assert.strictEqual(
-    context._extractStoreName('Successful transaction for amount 25.86 EUR at Microsoft-G140159420. 09.02.2026 12:00:00'),
+    context._extractStoreName('Successful transaction for amount 25.86 EUR at Microsoft-GEXAMPLE123. 09.02.2026 12:00:00'),
     'Microsoft'
   );
 });
@@ -128,8 +128,8 @@ test('extracts 3-character merchant names after cleanup', () => {
   const { context } = loadAppsScript();
 
   assert.strictEqual(
-    context._extractStoreName('Успешна трансакция с кредитна карта от Пощенска банка Mastercard World Premium XX-4020 на стойност 40.34 EUR в WMF.\\\\SOFIA\\\\             BGR на 31.01.2026 18:26:42'),
-    'WMF'
+    context._extractStoreName('Успешна трансакция с кредитна карта от Пощенска банка Mastercard World Premium XX-4020 на стойност 40.34 EUR в ABC.\\\\SOFIA\\\\             BGR на 31.01.2026 18:26:42'),
+    'ABC'
   );
 });
 
@@ -161,18 +161,18 @@ test('finds an existing Toshl expense entry by date, amount and description', ()
         statusCode: 200,
         body: [
           { id: 'entry-1', date: '2026-04-04', desc: 'OTHER', amount: -2.45 },
-          { id: 'entry-2', date: '2026-04-04', desc: 'WODATA', amount: -28.0 }
+          { id: 'entry-2', date: '2026-04-04', desc: 'SAMPLE STORE', amount: -28.0 }
         ]
       };
     }
   });
 
-  const result = context._findExistingToshlEntry(28, '2026-04-04', 'WODATA', false);
+  const result = context._findExistingToshlEntry(28, '2026-04-04', 'SAMPLE STORE', false);
 
   assert.deepStrictEqual(normalize(result), {
     id: 'entry-2',
     date: '2026-04-04',
-    desc: 'WODATA',
+    desc: 'SAMPLE STORE',
     amount: -28.0
   });
 });
@@ -265,7 +265,7 @@ test('normalizes merchant names before category lookup', () => {
     }
   });
 
-  assert.strictEqual(context._getCategory('Microsoft-G128027668'), 'General');
+  assert.strictEqual(context._getCategory('Microsoft-GEXAMPLE456'), 'General');
 });
 
 test('saves processed-message metadata through the web API', () => {
@@ -287,7 +287,7 @@ test('saves processed-message metadata through the web API', () => {
     'thread-456',
     'subject',
     'processed',
-    { date: '2026-04-04', store: 'WODATA', amount: 28 },
+    { date: '2026-04-04', store: 'SAMPLE STORE', amount: 28 },
     'entry-2'
   );
 
@@ -298,7 +298,7 @@ test('saves processed-message metadata through the web API', () => {
     subject: 'subject',
     status: 'processed',
     transaction_date: '2026-04-04',
-    store_name: 'WODATA',
+    store_name: 'SAMPLE STORE',
     amount: 28,
     toshl_entry_id: 'entry-2'
   });
