@@ -21,21 +21,29 @@ export default async function handler(
     const { db } = await connectToDatabase();
     const collection = db.collection('pending_transactions');
 
-    // Save the pending transaction
-    const result = await collection.insertOne({
-      store_name,
-      amount: parseFloat(amount),
-      currency,
-      date,
-      email_id,
-      needs_description: needs_description === true,
-      created_at: new Date(),
-      processed: false
-    });
+    const result = await collection.findOneAndUpdate(
+      { email_id },
+      {
+        $setOnInsert: {
+          store_name,
+          amount: parseFloat(amount),
+          currency,
+          date,
+          email_id,
+          needs_description: needs_description === true,
+          created_at: new Date(),
+          processed: false
+        }
+      },
+      {
+        upsert: true,
+        returnDocument: 'after'
+      }
+    );
 
     return res.status(200).json({ 
       success: true, 
-      insertedId: result.insertedId.toString() 
+      insertedId: result?._id?.toString()
     });
   } catch (error) {
     console.error('Error saving pending transaction:', error);

@@ -1,0 +1,118 @@
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+function createFetchResponse(statusCode, body) {
+  const text = typeof body === 'string' ? body : JSON.stringify(body);
+
+  return {
+    getResponseCode() {
+      return statusCode;
+    },
+    getContentText() {
+      return text;
+    }
+  };
+}
+
+function loadAppsScript(options = {}) {
+  const scriptPath = path.resolve(__dirname, '..', '..', 'gas', 'Code.js');
+  const scriptCode = fs.readFileSync(scriptPath, 'utf8');
+  const logs = [];
+  const scriptProperties = Object.assign(
+    {
+      TOSHL_ACCESS_TOKEN: 'test-token',
+      BANK_EMAIL: 'statements@postbank.bg',
+      EMAIL_SEARCH_QUERY: 'subject:(Успешна трансакция с кредитна карта)',
+      WEB_API_BASE_URL: 'https://example.test/api'
+    },
+    options.scriptProperties || {}
+  );
+
+  const fetchImpl = options.fetchImpl || function () {
+    throw new Error('Unexpected UrlFetchApp.fetch call in test');
+  };
+
+  const context = {
+    console,
+    JSON,
+    Math,
+    Date,
+    String,
+    Number,
+    Boolean,
+    Object,
+    Array,
+    RegExp,
+    encodeURIComponent,
+    decodeURIComponent,
+    Logger: {
+      log(message) {
+        logs.push(String(message));
+      }
+    },
+    PropertiesService: {
+      getScriptProperties() {
+        return {
+          getProperty(name) {
+            return Object.prototype.hasOwnProperty.call(scriptProperties, name)
+              ? scriptProperties[name]
+              : null;
+          }
+        };
+      }
+    },
+    UrlFetchApp: {
+      fetch(url, requestOptions) {
+        const result = fetchImpl(url, requestOptions);
+
+        if (result && typeof result.getResponseCode === 'function' && typeof result.getContentText === 'function') {
+          return result;
+        }
+
+        const statusCode = result && result.statusCode ? result.statusCode : 200;
+        const body = result && Object.prototype.hasOwnProperty.call(result, 'body') ? result.body : result;
+        return createFetchResponse(statusCode, body);
+      }
+    },
+    GmailApp: {},
+    ScriptApp: {},
+    Session: {
+      getActiveUser() {
+        return {
+          getEmail() {
+            return 'tester@example.com';
+          }
+        };
+      }
+    },
+    MailApp: {
+      sendEmail() {}
+    }
+  };
+
+  vm.createContext(context);
+  vm.runInContext(scriptCode, context, { filename: 'gas/Code.js' });
+  vm.runInContext(`
+    this.__testExports = {
+      CONFIG,
+      _extractAmountAndCurrency,
+      _extractStoreName,
+      _extractDate,
+      _findExistingToshlEntry,
+      _isMessageHandled,
+      _saveProcessedMessage
+    };
+  `, context);
+
+  return {
+    context: Object.assign(context, context.__testExports),
+    logs,
+    createFetchResponse
+  };
+}
+
+module.exports = {
+  loadAppsScript,
+  createFetchResponse
+};

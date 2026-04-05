@@ -1,0 +1,68 @@
+name: Apps Script
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - gas/Code.js
+      - gas/appsscript.json
+      - .clasp.json
+      - .claspignore
+      - package.json
+      - package-lock.json
+      - tests/**
+      - .github/workflows/apps-script.yml
+  pull_request:
+    paths:
+      - gas/Code.js
+      - gas/appsscript.json
+      - .clasp.json
+      - .claspignore
+      - package.json
+      - package-lock.json
+      - tests/**
+      - .github/workflows/apps-script.yml
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm test
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Write clasp credentials
+        env:
+          CLASP_CREDENTIALS_JSON: ${{ secrets.CLASP_CREDENTIALS_JSON }}
+        run: |
+          test -n "$CLASP_CREDENTIALS_JSON"
+          printf '%s' "$CLASP_CREDENTIALS_JSON" > "$HOME/.clasprc.json"
+
+      - name: Verify script payload
+        run: npx @google/clasp status
+
+      - name: Push Apps Script
+        run: npx @google/clasp push -f
+
+      - name: Create Apps Script version
+        run: npx @google/clasp version "GitHub Actions ${GITHUB_SHA}"
