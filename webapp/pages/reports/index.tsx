@@ -20,25 +20,29 @@ const reports = [
   {
     title: 'Merchant Spend Report',
     description: 'Rank merchants by spend, volume, and average ticket size to see where money is actually going.',
-    status: 'Planned',
+    href: '/reports/merchant-spend',
+    status: 'Live',
     tag: 'Merchants'
   },
   {
     title: 'Recurring Charges Detector',
     description: 'Identify likely subscriptions and repeating bills based on cadence and amount stability.',
-    status: 'Planned',
+    href: '/reports/recurring-charges',
+    status: 'Live',
     tag: 'Recurring'
   },
   {
     title: 'Large Transaction / Outlier Report',
     description: 'Surface unusually large transactions relative to their merchant or category history.',
-    status: 'Planned',
+    href: '/reports/outlier-transactions',
+    status: 'Live',
     tag: 'Outliers'
   },
   {
     title: 'Income Trend By Category',
     description: 'Compare inflow trends across salary, reimbursements, refunds, and other income categories.',
-    status: 'Planned',
+    href: '/reports/income-trend-by-category',
+    status: 'Live',
     tag: 'Income'
   }
 ];
@@ -51,7 +55,6 @@ export default function ReportsPage() {
       <div className={styles.shell}>
         <div className={styles.topbar}>
           <div>
-            <div className={styles.eyebrow}>Report Selector</div>
             <h1 className={styles.title}>Reports</h1>
             <p className={styles.subtitle}>
               Choose a report view based on what you want to understand: balances, category drift, merchants, recurring charges, or outliers.

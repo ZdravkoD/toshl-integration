@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { GetServerSideProps } from 'next';
+import type { EChartsOption } from 'echarts';
 import { useRouter } from 'next/router';
+import ReportChart from '../../components/ReportChart';
 import styles from '../../styles/Report.module.css';
 
 interface MonthlyBalanceRow {
@@ -26,10 +28,6 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'EUR',
   minimumFractionDigits: 2
-});
-
-const compactFormatter = new Intl.NumberFormat('en-US', {
-  maximumFractionDigits: 0
 });
 
 function formatSignedCurrency(value: number) {
@@ -79,58 +77,141 @@ export default function MonthlyBalanceReportPage() {
   const chartRows = report?.rows || [];
   const activeRow = chartRows.find((row) => row.month === activeMonth) || chartRows[chartRows.length - 1] || null;
 
-  const chartWidth = 1120;
-  const chartHeight = 520;
-  const chartPadding = { top: 28, right: 24, bottom: 84, left: 92 };
-  const chartInnerWidth = chartWidth - chartPadding.left - chartPadding.right;
-  const chartInnerHeight = chartHeight - chartPadding.top - chartPadding.bottom;
-  const balanceValues = chartRows.map((row) => row.balance);
-  const minBalance = balanceValues.length ? Math.min(...balanceValues, 0) : 0;
-  const maxBalance = balanceValues.length ? Math.max(...balanceValues, 0) : 0;
-  const balanceRange = maxBalance - minBalance || 1;
-  const zeroY = chartPadding.top + ((maxBalance - 0) / balanceRange) * chartInnerHeight;
-  const xStep = chartRows.length > 1 ? chartInnerWidth / (chartRows.length - 1) : 0;
+  const chartOption = useMemo<EChartsOption>(() => {
+    return {
+      animationDuration: 400,
+      color: ['#0f766e', '#c2410c'],
+      grid: {
+        top: 28,
+        right: 24,
+        bottom: 88,
+        left: 92
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'line',
+          lineStyle: {
+            color: 'rgba(194, 65, 12, 0.28)',
+            width: 1.5
+          }
+        },
+        backgroundColor: 'rgba(20, 27, 35, 0.96)',
+        borderWidth: 0,
+        textStyle: {
+          color: '#f8fafc'
+        },
+        formatter: (params: any) => {
+          const items = Array.isArray(params) ? params : [params];
+          const balance = items.find((item: any) => item.seriesName === 'Balance');
+          const net = items.find((item: any) => item.seriesName === 'Net');
+          const month = items[0]?.axisValueLabel || items[0]?.name || '';
 
-  const points = chartRows.map((row, index) => {
-    const x = chartPadding.left + (chartRows.length > 1 ? xStep * index : chartInnerWidth / 2);
-    const y = chartPadding.top + ((maxBalance - row.balance) / balanceRange) * chartInnerHeight;
-    const previousX = index === 0 ? chartPadding.left : chartPadding.left + xStep * (index - 1);
-    const nextX = index === chartRows.length - 1 ? chartWidth - chartPadding.right : chartPadding.left + xStep * (index + 1);
-    const hitStartX = index === 0 ? chartPadding.left : x - (x - previousX) / 2;
-    const hitEndX = index === chartRows.length - 1 ? chartWidth - chartPadding.right : x + (nextX - x) / 2;
-
-    return { ...row, x, y, index, hitStartX, hitEndX };
-  });
-
-  const areaPath = points.length
-    ? [
-        `M ${points[0].x} ${zeroY}`,
-        ...points.map((point, index) => `${index === 0 ? 'L' : 'L'} ${point.x} ${point.y}`),
-        `L ${points[points.length - 1].x} ${zeroY}`,
-        'Z'
-      ].join(' ')
-    : '';
-
-  const linePath = points.length
-    ? points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
-    : '';
-
-  const gridLines = Array.from({ length: 6 }, (_, index) => {
-    const value = minBalance + (balanceRange / 5) * index;
-    const y = chartPadding.top + ((maxBalance - value) / balanceRange) * chartInnerHeight;
-    return { value, y };
-  });
-
-  const netMagnitude = chartRows.length
-    ? Math.max(...chartRows.map((row) => Math.abs(row.net)), 1)
-    : 1;
+          return [
+            `<div>${month}</div>`,
+            balance ? `<div>Balance ${currencyFormatter.format(Number(balance.data ?? 0))}</div>` : '',
+            net ? `<div>Net ${formatSignedCurrency(Number(net.data ?? 0))}</div>` : ''
+          ].join('');
+        }
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: true,
+        data: chartRows.map((row) => row.month),
+        axisTick: {
+          show: false
+        },
+        axisLine: {
+          lineStyle: {
+            color: 'rgba(31, 41, 51, 0.12)'
+          }
+        },
+        axisLabel: {
+          color: '#5f6c76',
+          rotate: 32,
+          margin: 18
+        }
+      },
+      yAxis: [
+        {
+          type: 'value',
+          name: 'Balance',
+          axisLabel: {
+            color: '#5f6c76',
+            formatter: (value: number) => currencyFormatter.format(value)
+          },
+          splitLine: {
+            lineStyle: {
+              color: 'rgba(31, 41, 51, 0.12)'
+            }
+          }
+        },
+        {
+          type: 'value',
+          name: 'Net',
+          axisLabel: {
+            color: '#5f6c76',
+            formatter: (value: number) => formatSignedCurrency(value)
+          },
+          splitLine: {
+            show: false
+          }
+        }
+      ],
+      series: [
+        {
+          name: 'Net',
+          type: 'bar',
+          yAxisIndex: 1,
+          data: chartRows.map((row) => row.net),
+          barWidth: 28,
+          itemStyle: {
+            borderRadius: [10, 10, 10, 10],
+            color: (params: any) => (
+              Number(params.value) >= 0 ? 'rgba(4, 120, 87, 0.22)' : 'rgba(185, 28, 28, 0.2)'
+            )
+          },
+          z: 1
+        },
+        {
+          name: 'Balance',
+          type: 'line',
+          smooth: false,
+          symbol: 'circle',
+          symbolSize: 10,
+          data: chartRows.map((row) => row.balance),
+          lineStyle: {
+            width: 4,
+            color: '#0f766e'
+          },
+          itemStyle: {
+            color: '#115e59',
+            borderColor: '#ffffff',
+            borderWidth: 3
+          },
+          areaStyle: {
+            color: 'rgba(15, 118, 110, 0.16)'
+          },
+          z: 3,
+          markLine: {
+            silent: true,
+            symbol: 'none',
+            lineStyle: {
+              color: 'rgba(194, 65, 12, 0.24)',
+              type: 'dashed'
+            },
+            data: [{ yAxis: 0 }]
+          }
+        }
+      ]
+    };
+  }, [chartRows]);
 
   return (
     <div className={styles.page}>
       <div className={styles.shell}>
         <div className={styles.topbar}>
           <div>
-            <div className={styles.eyebrow}>Mongo-Backed Report</div>
             <h1 className={styles.title}>Monthly Balance</h1>
             <p className={styles.subtitle}>
               Cumulative net balance from zero. Transfers are shown separately and excluded from net.
@@ -205,12 +286,12 @@ export default function MonthlyBalanceReportPage() {
             {!!report.rows.length && (
               <div className={styles.chartCard}>
                 <div className={styles.chartHeader}>
-                    <div>
-                      <div className={styles.chartTitle}>Cumulative Balance By Month</div>
-                      <div className={styles.chartCaption}>
-                        Hover anywhere in a month column to inspect month-level net and running balance.
-                      </div>
+                  <div>
+                    <div className={styles.chartTitle}>Cumulative Balance By Month</div>
+                    <div className={styles.chartCaption}>
+                      Hover the chart to inspect month-level net and running balance.
                     </div>
+                  </div>
 
                   {activeRow && (
                     <div className={styles.chartCallout}>
@@ -226,105 +307,25 @@ export default function MonthlyBalanceReportPage() {
                 </div>
 
                 <div className={styles.chartFrame}>
-                  <svg
-                    viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-                    className={styles.chartSvg}
-                    role="img"
-                    aria-label="Monthly cumulative balance chart"
-                  >
-                    <defs>
-                      <linearGradient id="balanceAreaFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#0f766e" stopOpacity="0.32" />
-                        <stop offset="100%" stopColor="#0f766e" stopOpacity="0.03" />
-                      </linearGradient>
-                    </defs>
-
-                    {gridLines.map((line) => (
-                      <g key={line.y}>
-                        <line
-                          x1={chartPadding.left}
-                          x2={chartWidth - chartPadding.right}
-                          y1={line.y}
-                          y2={line.y}
-                          className={styles.chartGrid}
-                        />
-                        <text
-                          x={chartPadding.left - 16}
-                          y={line.y + 4}
-                          textAnchor="end"
-                          className={styles.chartAxisLabel}
-                        >
-                          {compactFormatter.format(line.value)}
-                        </text>
-                      </g>
-                    ))}
-
-                    <line
-                      x1={chartPadding.left}
-                      x2={chartWidth - chartPadding.right}
-                      y1={zeroY}
-                      y2={zeroY}
-                      className={styles.chartZero}
-                    />
-
-                    {points.map((point) => {
-                      const barHeight = Math.max(12, (Math.abs(point.net) / netMagnitude) * 84);
-                      const barY = point.net >= 0 ? zeroY - barHeight : zeroY;
-
-                      return (
-                        <g key={point.month}>
-                          <line
-                            x1={point.x}
-                            x2={point.x}
-                            y1={chartPadding.top}
-                            y2={chartHeight - chartPadding.bottom}
-                            className={activeRow?.month === point.month ? styles.chartGuideActive : styles.chartGuide}
-                          />
-                          <rect
-                            x={point.x - 14}
-                            y={barY}
-                            width={28}
-                            height={barHeight}
-                            rx={10}
-                            className={point.net >= 0 ? styles.netBarPositive : styles.netBarNegative}
-                          />
-                          <text
-                            x={point.x}
-                            y={chartHeight - chartPadding.bottom + 28}
-                            textAnchor="end"
-                            transform={`rotate(-32 ${point.x} ${chartHeight - chartPadding.bottom + 28})`}
-                            className={styles.chartAxisLabel}
-                          >
-                            {point.month}
-                          </text>
-                        </g>
-                      );
-                    })}
-
-                    {areaPath && <path d={areaPath} fill="url(#balanceAreaFill)" />}
-                    {linePath && <path d={linePath} className={styles.chartLine} />}
-
-                    {points.map((point) => (
-                      <g key={`${point.month}-point`}>
-                        <rect
-                          x={point.hitStartX}
-                          y={chartPadding.top}
-                          width={point.hitEndX - point.hitStartX}
-                          height={chartInnerHeight}
-                          className={styles.chartHitArea}
-                          onMouseEnter={() => setActiveMonth(point.month)}
-                          onMouseMove={() => setActiveMonth(point.month)}
-                          onClick={() => setActiveMonth(point.month)}
-                        />
-                        <circle
-                          cx={point.x}
-                          cy={point.y}
-                          r={activeRow?.month === point.month ? 10 : 6}
-                          className={activeRow?.month === point.month ? styles.chartPointActive : styles.chartPoint}
-                        />
-                      </g>
-                    ))}
-                  </svg>
+                  <ReportChart
+                    option={chartOption}
+                    notMerge
+                    lazyUpdate
+                    style={{ height: 520, width: '100%' }}
+                    onEvents={{
+                      updateAxisPointer: (event: any) => {
+                        const axisValue = event?.axesInfo?.[0]?.value;
+                        if (typeof axisValue === 'string') {
+                          setActiveMonth(axisValue);
+                        }
+                      },
+                      mouseout: () => {
+                        if (chartRows.length) {
+                          setActiveMonth(chartRows[chartRows.length - 1].month);
+                        }
+                      }
+                    }}
+                  />
                 </div>
               </div>
             )}

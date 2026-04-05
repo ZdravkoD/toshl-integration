@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { GetServerSideProps } from 'next';
+import type { EChartsOption } from 'echarts';
 import { useRouter } from 'next/router';
+import ReportChart from '../../components/ReportChart';
 import styles from '../../styles/Report.module.css';
 
 interface CategorySeries {
@@ -9,13 +11,15 @@ interface CategorySeries {
   averageMonthly: number;
 }
 
+interface CategorySpendValue {
+  category: string;
+  amount: number;
+}
+
 interface CategorySpendRow {
   month: string;
   total: number;
-  values: Array<{
-    category: string;
-    amount: number;
-  }>;
+  values: CategorySpendValue[];
 }
 
 interface CategorySpendTrendResponse {
@@ -36,17 +40,19 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2
 });
 
-const compactFormatter = new Intl.NumberFormat('en-US', {
-  maximumFractionDigits: 0
-});
-
 const palette = ['#0f766e', '#c2410c', '#1d4ed8', '#7c3aed', '#b45309', '#475569'];
+
+function roundCurrency(value: number) {
+  return Math.round(value * 100) / 100;
+}
 
 export default function CategorySpendTrendReportPage() {
   const router = useRouter();
   const [from, setFrom] = useState('2025-01-01');
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
   const [report, setReport] = useState<CategorySpendTrendResponse | null>(null);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [yAxisMode, setYAxisMode] = useState<'linear' | 'exponential'>('linear');
   const [activeMonth, setActiveMonth] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -69,6 +75,7 @@ export default function CategorySpendTrendReportPage() {
       }
 
       setReport(data);
+      setSelectedCategories((data.categories || []).map((item: CategorySeries) => item.category));
       setActiveMonth(data.rows?.length ? data.rows[data.rows.length - 1].month : null);
     } catch (_err) {
       setError('Network error: Failed to load category spend trend report');
@@ -82,71 +89,152 @@ export default function CategorySpendTrendReportPage() {
   }, []);
 
   const chartRows = report?.rows || [];
-  const series = report?.categories || [];
-  const activeRow = chartRows.find((row) => row.month === activeMonth) || chartRows[chartRows.length - 1] || null;
-  const chartWidth = 1120;
-  const chartHeight = 520;
-  const chartPadding = { top: 28, right: 24, bottom: 84, left: 92 };
-  const chartInnerWidth = chartWidth - chartPadding.left - chartPadding.right;
-  const chartInnerHeight = chartHeight - chartPadding.top - chartPadding.bottom;
-  const maxAmount = Math.max(
-    ...chartRows.flatMap((row) => row.values.map((value) => value.amount)),
-    0
-  );
-  const yMax = maxAmount > 0 ? maxAmount * 1.12 : 1;
-  const xStep = chartRows.length > 1 ? chartInnerWidth / (chartRows.length - 1) : 0;
-
-  const monthPoints = chartRows.map((row, index) => {
-    const x = chartPadding.left + (chartRows.length > 1 ? xStep * index : chartInnerWidth / 2);
-    const previousX = index === 0 ? chartPadding.left : chartPadding.left + xStep * (index - 1);
-    const nextX = index === chartRows.length - 1 ? chartWidth - chartPadding.right : chartPadding.left + xStep * (index + 1);
-    const hitStartX = index === 0 ? chartPadding.left : x - (x - previousX) / 2;
-    const hitEndX = index === chartRows.length - 1 ? chartWidth - chartPadding.right : x + (nextX - x) / 2;
-
-    return {
-      month: row.month,
-      x,
-      hitStartX,
-      hitEndX
-    };
-  });
-
-  const seriesWithColor = series.map((item, index) => ({
+  const allSeries = (report?.categories || []).map((item, index) => ({
     ...item,
     color: palette[index % palette.length]
   }));
-
-  const seriesPaths = seriesWithColor.map((item) => {
-    const points = chartRows.map((row, index) => {
-      const value = row.values.find((entry) => entry.category === item.category)?.amount || 0;
-      const x = chartPadding.left + (chartRows.length > 1 ? xStep * index : chartInnerWidth / 2);
-      const y = chartPadding.top + ((yMax - value) / yMax) * chartInnerHeight;
-      return { month: row.month, x, y, value };
-    });
-
+  const selectedCategorySet = new Set(selectedCategories);
+  const filteredSeries = allSeries.filter((item) => selectedCategorySet.has(item.category));
+  const filteredRows = chartRows.map((row) => {
+    const values = row.values.filter((value) => selectedCategorySet.has(value.category));
     return {
-      ...item,
-      points,
-      path: points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+      ...row,
+      values,
+      total: roundCurrency(values.reduce((sum, value) => sum + value.amount, 0))
     };
   });
+  const activeRow = filteredRows.find((row) => row.month === activeMonth) || filteredRows[filteredRows.length - 1] || null;
+  const visibleTotalSpend = roundCurrency(filteredRows.reduce((sum, row) => sum + row.total, 0));
+  const visibleAverageMonthlySpend = filteredRows.length ? roundCurrency(visibleTotalSpend / filteredRows.length) : 0;
+  const visibleTopCategory = filteredSeries[0]?.category || null;
+  const visibleHighestMonth = filteredRows.reduce<CategorySpendRow | null>((best, row) => {
+    if (!best || row.total > best.total) {
+      return row;
+    }
+    return best;
+  }, null);
 
-  const gridLines = Array.from({ length: 6 }, (_, index) => {
-    const value = (yMax / 5) * index;
-    const y = chartPadding.top + ((yMax - value) / yMax) * chartInnerHeight;
-    return { value, y };
-  });
+  const transformValue = (value: number) => yAxisMode === 'exponential' ? Math.log1p(value) : value;
+  const inverseTransformValue = (value: number) => yAxisMode === 'exponential' ? Math.expm1(value) : value;
+  const maxAmount = Math.max(
+    ...filteredRows.flatMap((row) => row.values.map((value) => value.amount)),
+    0
+  );
+  const displayMaxAmount = maxAmount > 0 ? maxAmount * 1.12 : 1;
+  const scaledMax = Math.max(transformValue(displayMaxAmount), 1);
+
+  const chartOption = useMemo<EChartsOption>(() => {
+    return {
+      animationDuration: 400,
+      color: filteredSeries.map((item) => item.color),
+      grid: {
+        top: 28,
+        right: 24,
+        bottom: 88,
+        left: 92
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'line',
+          lineStyle: {
+            color: 'rgba(194, 65, 12, 0.28)',
+            width: 1.5
+          }
+        },
+        backgroundColor: 'rgba(20, 27, 35, 0.96)',
+        borderWidth: 0,
+        textStyle: {
+          color: '#f8fafc'
+        },
+        formatter: (params: any) => {
+          const items = (Array.isArray(params) ? params : [params])
+            .filter((item: any) => item.seriesName && item.data != null);
+          const month = items[0]?.axisValueLabel || items[0]?.name || '';
+          const total = items.reduce((sum: number, item: any) => sum + Number(item.data?.rawAmount ?? 0), 0);
+          const lines = items
+            .sort((left: any, right: any) => Number(right.data?.rawAmount ?? 0) - Number(left.data?.rawAmount ?? 0))
+            .slice(0, 5)
+            .map((item: any) => `<div>${item.seriesName} ${currencyFormatter.format(Number(item.data?.rawAmount ?? 0))}</div>`);
+
+          return [`<div>${month}</div>`, `<div>Total ${currencyFormatter.format(total)}</div>`, ...lines].join('');
+        }
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: filteredRows.map((row) => row.month),
+        axisTick: {
+          show: false
+        },
+        axisLine: {
+          lineStyle: {
+            color: 'rgba(31, 41, 51, 0.12)'
+          }
+        },
+        axisLabel: {
+          color: '#5f6c76',
+          rotate: 32,
+          margin: 18
+        }
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: {
+          color: '#5f6c76',
+          formatter: (value: number) => currencyFormatter.format(inverseTransformValue(value))
+        },
+        splitLine: {
+          lineStyle: {
+            color: 'rgba(31, 41, 51, 0.12)'
+          }
+        }
+      },
+      series: filteredSeries.map((item) => ({
+        name: item.category,
+        type: 'line',
+        smooth: false,
+        connectNulls: false,
+        symbol: 'circle',
+        symbolSize: 8,
+        showSymbol: true,
+        data: filteredRows.map((row) => {
+          const amount = row.values.find((entry) => entry.category === item.category)?.amount || 0;
+          return {
+            value: transformValue(amount),
+            rawAmount: amount
+          };
+        }),
+        lineStyle: {
+          width: 3,
+          color: item.color
+        },
+        itemStyle: {
+          color: item.color,
+          borderColor: '#ffffff',
+          borderWidth: 2
+        }
+      }))
+    };
+  }, [filteredRows, filteredSeries, inverseTransformValue, transformValue]);
 
   const activeValues = activeRow
     ? [...activeRow.values].sort((left, right) => right.amount - left.amount)
     : [];
+
+  const toggleCategory = (category: string) => {
+    setSelectedCategories((current) => (
+      current.includes(category)
+        ? current.filter((item) => item !== category)
+        : [...current, category]
+    ));
+  };
 
   return (
     <div className={styles.page}>
       <div className={styles.shell}>
         <div className={styles.topbar}>
           <div>
-            <div className={styles.eyebrow}>Mongo-Backed Report</div>
             <h1 className={styles.title}>Category Spend Trend</h1>
             <p className={styles.subtitle}>
               Compare monthly expense movement across your biggest categories and inspect which categories dominate each month.
@@ -201,20 +289,20 @@ export default function CategorySpendTrendReportPage() {
           <>
             <div className={styles.statsGrid}>
               <div className={styles.statCard}>
-                <div className={styles.statLabel}>Total Spend</div>
-                <div className={styles.statValue}>{currencyFormatter.format(report.totalSpend)}</div>
+                <div className={styles.statLabel}>Visible Spend</div>
+                <div className={styles.statValue}>{currencyFormatter.format(visibleTotalSpend)}</div>
               </div>
               <div className={styles.statCard}>
-                <div className={styles.statLabel}>Average Monthly Spend</div>
-                <div className={styles.statValue}>{currencyFormatter.format(report.averageMonthlySpend)}</div>
+                <div className={styles.statLabel}>Visible Average / Month</div>
+                <div className={styles.statValue}>{currencyFormatter.format(visibleAverageMonthlySpend)}</div>
               </div>
               <div className={styles.statCard}>
-                <div className={styles.statLabel}>Top Category</div>
-                <div className={styles.statValue}>{report.topCategory || 'N/A'}</div>
+                <div className={styles.statLabel}>Top Visible Category</div>
+                <div className={styles.statValue}>{visibleTopCategory || 'N/A'}</div>
               </div>
               <div className={styles.statCard}>
-                <div className={styles.statLabel}>Highest Spend Month</div>
-                <div className={styles.statValueSmall}>{report.highestMonth || 'N/A'}</div>
+                <div className={styles.statLabel}>Highest Visible Month</div>
+                <div className={styles.statValueSmall}>{visibleHighestMonth?.month || 'N/A'}</div>
               </div>
             </div>
 
@@ -224,7 +312,7 @@ export default function CategorySpendTrendReportPage() {
                   <div>
                     <div className={styles.chartTitle}>Top Category Lines By Month</div>
                     <div className={styles.chartCaption}>
-                      Hover anywhere in a month column to compare the leading expense categories for that month.
+                      Filter categories below, then hover the chart to compare the visible series.
                     </div>
                   </div>
 
@@ -232,7 +320,7 @@ export default function CategorySpendTrendReportPage() {
                     <div className={styles.chartCallout}>
                       <div className={styles.chartCalloutMonth}>{activeRow.month}</div>
                       <div className={styles.chartCalloutValue}>
-                        Total {currencyFormatter.format(activeRow.total)}
+                        Visible {currencyFormatter.format(activeRow.total)}
                       </div>
                       <div className={styles.calloutList}>
                         {activeValues.slice(0, 5).map((value) => (
@@ -246,98 +334,89 @@ export default function CategorySpendTrendReportPage() {
                   )}
                 </div>
 
-                <div className={styles.chartLegend}>
-                  {seriesWithColor.map((item) => (
-                    <div key={item.category} className={styles.legendItem}>
-                      <span className={styles.legendSwatch} style={{ backgroundColor: item.color }} />
-                      <span>{item.category}</span>
+                <div className={styles.chartToolbar}>
+                  <div className={styles.chartLegend}>
+                    {allSeries.map((item) => {
+                      const isSelected = selectedCategorySet.has(item.category);
+
+                      return (
+                        <button
+                          key={item.category}
+                          type="button"
+                          className={isSelected ? styles.legendToggleActive : styles.legendToggle}
+                          onClick={() => toggleCategory(item.category)}
+                        >
+                          <span className={styles.legendSwatch} style={{ backgroundColor: item.color }} />
+                          <span>{item.category}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className={styles.chartControlRow}>
+                    <div className={styles.controlGroup}>
+                      <button
+                        type="button"
+                        className={styles.ghostButton}
+                        onClick={() => setSelectedCategories(allSeries.map((item) => item.category))}
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.ghostButton}
+                        onClick={() => setSelectedCategories([])}
+                      >
+                        Clear
+                      </button>
                     </div>
-                  ))}
+
+                    <div className={styles.segmentedControl} aria-label="Y-axis scale">
+                      <button
+                        type="button"
+                        className={yAxisMode === 'linear' ? styles.segmentedControlActive : styles.segmentedControlButton}
+                        onClick={() => setYAxisMode('linear')}
+                      >
+                        Linear
+                      </button>
+                      <button
+                        type="button"
+                        className={yAxisMode === 'exponential' ? styles.segmentedControlActive : styles.segmentedControlButton}
+                        onClick={() => setYAxisMode('exponential')}
+                      >
+                        Exponential
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <div className={styles.chartFrame}>
-                  <svg
-                    viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-                    className={styles.chartSvg}
-                    role="img"
-                    aria-label="Category spend trend chart"
-                  >
-                    {gridLines.map((line) => (
-                      <g key={line.y}>
-                        <line
-                          x1={chartPadding.left}
-                          x2={chartWidth - chartPadding.right}
-                          y1={line.y}
-                          y2={line.y}
-                          className={styles.chartGrid}
-                        />
-                        <text
-                          x={chartPadding.left - 16}
-                          y={line.y + 4}
-                          textAnchor="end"
-                          className={styles.chartAxisLabel}
-                        >
-                          {compactFormatter.format(line.value)}
-                        </text>
-                      </g>
-                    ))}
-
-                    {monthPoints.map((point) => (
-                      <g key={point.month}>
-                        <line
-                          x1={point.x}
-                          x2={point.x}
-                          y1={chartPadding.top}
-                          y2={chartHeight - chartPadding.bottom}
-                          className={activeRow?.month === point.month ? styles.chartGuideActive : styles.chartGuide}
-                        />
-                        <text
-                          x={point.x}
-                          y={chartHeight - chartPadding.bottom + 28}
-                          textAnchor="end"
-                          transform={`rotate(-32 ${point.x} ${chartHeight - chartPadding.bottom + 28})`}
-                          className={styles.chartAxisLabel}
-                        >
-                          {point.month}
-                        </text>
-                      </g>
-                    ))}
-
-                    {seriesPaths.map((item) => (
-                      <g key={item.category}>
-                        <path
-                          d={item.path}
-                          className={styles.chartLine}
-                          style={{ stroke: item.color, strokeWidth: 3.2 }}
-                        />
-                        {item.points.map((point) => (
-                          <circle
-                            key={`${item.category}-${point.month}`}
-                            cx={point.x}
-                            cy={point.y}
-                            r={activeRow?.month === point.month ? 6 : 4}
-                            className={styles.chartPoint}
-                            style={{ fill: item.color }}
-                          />
-                        ))}
-                      </g>
-                    ))}
-
-                    {monthPoints.map((point) => (
-                      <rect
-                        key={`${point.month}-hit`}
-                        x={point.hitStartX}
-                        y={chartPadding.top}
-                        width={point.hitEndX - point.hitStartX}
-                        height={chartInnerHeight}
-                        className={styles.chartHitArea}
-                        onMouseEnter={() => setActiveMonth(point.month)}
-                        onMouseMove={() => setActiveMonth(point.month)}
-                        onClick={() => setActiveMonth(point.month)}
-                      />
-                    ))}
-                  </svg>
-                </div>
+                {!!filteredSeries.length ? (
+                  <div className={styles.chartFrame}>
+                    <ReportChart
+                      option={chartOption}
+                      notMerge
+                      lazyUpdate
+                      style={{ height: 520, width: '100%' }}
+                      onEvents={{
+                        updateAxisPointer: (event: any) => {
+                          const axisValue = event?.axesInfo?.[0]?.value;
+                          if (typeof axisValue === 'string') {
+                            setActiveMonth(axisValue);
+                          }
+                        },
+                        mouseout: () => {
+                          if (filteredRows.length) {
+                            setActiveMonth(filteredRows[filteredRows.length - 1].month);
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className={styles.emptyState}>
+                    Select at least one category to render the trend chart.
+                  </div>
+                )}
               </div>
             )}
 
@@ -351,7 +430,7 @@ export default function CategorySpendTrendReportPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {report.categories.map((category) => (
+                  {filteredSeries.map((category) => (
                     <tr key={category.category}>
                       <td>{category.category}</td>
                       <td className={styles.negative}>{currencyFormatter.format(category.total)}</td>
@@ -360,6 +439,12 @@ export default function CategorySpendTrendReportPage() {
                   ))}
                 </tbody>
               </table>
+
+              {!filteredSeries.length && !loading && (
+                <div className={styles.emptyState}>
+                  No categories are selected. Use the chips above to choose which lines to display.
+                </div>
+              )}
 
               {!report.rows.length && !loading && (
                 <div className={styles.emptyState}>

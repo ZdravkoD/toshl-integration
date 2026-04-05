@@ -84,6 +84,54 @@ export interface CategorySpendTrendRow {
   }>;
 }
 
+export interface MerchantSpendRow {
+  merchant: string;
+  spend: number;
+  transactions: number;
+  averageTicket: number;
+  latestDate: string | null;
+  monthlyTotals: Array<{
+    month: string;
+    amount: number;
+  }>;
+}
+
+export interface RecurringChargeRow {
+  merchant: string;
+  category: string;
+  averageAmount: number;
+  latestAmount: number;
+  transactions: number;
+  intervalDays: number | null;
+  stabilityScore: number;
+  lastChargedAt: string | null;
+}
+
+export interface OutlierTransactionRow {
+  toshlId: string;
+  date: string;
+  merchant: string;
+  category: string;
+  amount: number;
+  baselineAmount: number;
+  deviationRatio: number;
+}
+
+export interface IncomeTrendByCategorySeries {
+  category: string;
+  total: number;
+  averageMonthly: number;
+}
+
+export interface IncomeTrendByCategoryRow {
+  month: string;
+  total: number;
+  values: Array<{
+    category: string;
+    amount: number;
+  }>;
+}
+
 function roundCurrency(amount: number) {
   return Math.round(amount * 100) / 100;
 }
@@ -797,6 +845,413 @@ export async function getCategorySpendTrendReport(
     topCategory: topCategory?.category || null,
     highestMonth: highestMonth?.month || null,
     categories: series,
+    rows
+  };
+}
+
+export async function getMerchantSpendReport(
+  db: Db,
+  options: { from?: string; to?: string; limit?: number } = {}
+) {
+  const from = coerceIsoDate(options.from, DEFAULT_SYNC_START_DATE);
+  const to = coerceIsoDate(options.to, todayIsoDate());
+  const limit = Math.max(5, Math.min(Number(options.limit || 12), 30));
+
+  const rawRows = await db.collection(ENTRIES_COLLECTION)
+    .aggregate([
+      {
+        $match: {
+          date: { $gte: from, $lte: to },
+          entry_type: 'expense',
+          is_transfer: { $ne: true },
+          is_deleted: { $ne: true }
+        }
+      },
+      {
+        $project: {
+          merchant: { $ifNull: ['$desc', 'Unknown merchant'] },
+          month: { $substr: ['$date', 0, 7] },
+          date: '$date',
+          amount: { $abs: '$amount_eur' }
+        }
+      },
+      {
+        $group: {
+          _id: '$merchant',
+          spend: { $sum: '$amount' },
+          transactions: { $sum: 1 },
+          latestDate: { $max: '$date' },
+          months: {
+            $push: {
+              month: '$month',
+              amount: '$amount'
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          merchant: '$_id',
+          spend: { $round: ['$spend', 2] },
+          transactions: 1,
+          averageTicket: {
+            $round: [
+              {
+                $cond: [
+                  { $gt: ['$transactions', 0] },
+                  { $divide: ['$spend', '$transactions'] },
+                  0
+                ]
+              },
+              2
+            ]
+          },
+          latestDate: 1,
+          months: 1
+        }
+      },
+      { $sort: { spend: -1, transactions: -1 } },
+      { $limit: limit }
+    ])
+    .toArray() as Array<{
+      merchant: string;
+      spend: number;
+      transactions: number;
+      averageTicket: number;
+      latestDate: string | null;
+      months: Array<{ month: string; amount: number }>;
+    }>;
+
+  const monthKeys = listMonthKeys(from, to);
+  const rows: MerchantSpendRow[] = rawRows.map((row) => {
+    const totals = new Map<string, number>();
+    row.months.forEach((entry) => {
+      totals.set(entry.month, roundCurrency((totals.get(entry.month) || 0) + Number(entry.amount || 0)));
+    });
+
+    return {
+      merchant: row.merchant,
+      spend: roundCurrency(row.spend),
+      transactions: row.transactions,
+      averageTicket: roundCurrency(row.averageTicket),
+      latestDate: row.latestDate || null,
+      monthlyTotals: monthKeys.map((month) => ({
+        month,
+        amount: roundCurrency(totals.get(month) || 0)
+      }))
+    };
+  });
+
+  const totalSpend = roundCurrency(rows.reduce((sum, row) => sum + row.spend, 0));
+
+  return {
+    currency: 'EUR' as const,
+    from,
+    to,
+    totalSpend,
+    merchantCount: rows.length,
+    topMerchant: rows[0]?.merchant || null,
+    rows
+  };
+}
+
+export async function getRecurringChargesReport(
+  db: Db,
+  options: { from?: string; to?: string; limit?: number } = {}
+) {
+  const from = coerceIsoDate(options.from, DEFAULT_SYNC_START_DATE);
+  const to = coerceIsoDate(options.to, todayIsoDate());
+  const limit = Math.max(5, Math.min(Number(options.limit || 15), 40));
+
+  const rawRows = await db.collection(ENTRIES_COLLECTION)
+    .aggregate([
+      {
+        $match: {
+          date: { $gte: from, $lte: to },
+          entry_type: 'expense',
+          is_transfer: { $ne: true },
+          is_deleted: { $ne: true }
+        }
+      },
+      {
+        $project: {
+          merchant: { $ifNull: ['$desc', 'Unknown merchant'] },
+          category: { $ifNull: ['$category_name', 'Uncategorized'] },
+          date: '$date',
+          amount: { $abs: '$amount_eur' }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            merchant: '$merchant',
+            category: '$category'
+          },
+          transactions: { $sum: 1 },
+          averageAmount: { $avg: '$amount' },
+          minAmount: { $min: '$amount' },
+          maxAmount: { $max: '$amount' },
+          dates: { $push: '$date' },
+          latestAmount: { $last: '$amount' },
+          lastChargedAt: { $max: '$date' }
+        }
+      },
+      {
+        $match: {
+          transactions: { $gte: 3 }
+        }
+      }
+    ])
+    .toArray() as Array<{
+      _id: { merchant: string; category: string };
+      transactions: number;
+      averageAmount: number;
+      minAmount: number;
+      maxAmount: number;
+      dates: string[];
+      latestAmount: number;
+      lastChargedAt: string | null;
+    }>;
+
+  const rows: RecurringChargeRow[] = rawRows.map((row) => {
+    const dates = [...row.dates].sort();
+    const intervals = dates.slice(1).map((date, index) => {
+      const current = new Date(`${date}T00:00:00Z`).getTime();
+      const previous = new Date(`${dates[index]}T00:00:00Z`).getTime();
+      return Math.round((current - previous) / (1000 * 60 * 60 * 24));
+    });
+    const intervalDays = intervals.length
+      ? Math.round(intervals.reduce((sum, value) => sum + value, 0) / intervals.length)
+      : null;
+    const amountSpread = row.averageAmount > 0 ? (row.maxAmount - row.minAmount) / row.averageAmount : 1;
+    const cadencePenalty = intervalDays === null ? 0.4 : Math.min(Math.abs(intervalDays - 30) / 30, 0.6);
+    const stabilityScore = roundCurrency(Math.max(0, 1 - Math.min(amountSpread, 1) * 0.65 - cadencePenalty));
+
+    return {
+      merchant: row._id.merchant,
+      category: row._id.category,
+      averageAmount: roundCurrency(row.averageAmount),
+      latestAmount: roundCurrency(row.latestAmount),
+      transactions: row.transactions,
+      intervalDays,
+      stabilityScore,
+      lastChargedAt: row.lastChargedAt || null
+    };
+  })
+    .filter((row) => row.stabilityScore >= 0.35)
+    .sort((left, right) => right.stabilityScore - left.stabilityScore || right.averageAmount - left.averageAmount)
+    .slice(0, limit);
+
+  return {
+    currency: 'EUR' as const,
+    from,
+    to,
+    recurringCount: rows.length,
+    strongestMatch: rows[0]?.merchant || null,
+    rows
+  };
+}
+
+export async function getOutlierTransactionsReport(
+  db: Db,
+  options: { from?: string; to?: string; limit?: number } = {}
+) {
+  const from = coerceIsoDate(options.from, DEFAULT_SYNC_START_DATE);
+  const to = coerceIsoDate(options.to, todayIsoDate());
+  const limit = Math.max(5, Math.min(Number(options.limit || 20), 50));
+
+  const entries = await db.collection(ENTRIES_COLLECTION)
+    .find({
+      date: { $gte: from, $lte: to },
+      entry_type: { $in: ['expense', 'income'] },
+      is_transfer: { $ne: true },
+      is_deleted: { $ne: true }
+    }, {
+      projection: {
+        toshl_id: 1,
+        date: 1,
+        desc: 1,
+        category_name: 1,
+        amount_eur: 1
+      }
+    })
+    .sort({ date: 1 })
+    .toArray() as Array<{
+      toshl_id: string;
+      date: string;
+      desc?: string;
+      category_name?: string;
+      amount_eur: number;
+    }>;
+
+  const grouped = new Map<string, number[]>();
+  entries.forEach((entry) => {
+    const merchant = entry.desc || 'Unknown merchant';
+    const amount = Math.abs(Number(entry.amount_eur || 0));
+    const values = grouped.get(merchant) || [];
+    values.push(amount);
+    grouped.set(merchant, values);
+  });
+
+  const rows: OutlierTransactionRow[] = entries.map((entry) => {
+    const merchant = entry.desc || 'Unknown merchant';
+    const amount = Math.abs(Number(entry.amount_eur || 0));
+    const history = grouped.get(merchant) || [];
+    const baselineCandidates = history.filter((value) => value !== amount);
+    const baselineAmount = baselineCandidates.length
+      ? baselineCandidates.reduce((sum, value) => sum + value, 0) / baselineCandidates.length
+      : amount;
+    const deviationRatio = baselineAmount > 0 ? amount / baselineAmount : 1;
+
+    return {
+      toshlId: entry.toshl_id,
+      date: entry.date,
+      merchant,
+      category: entry.category_name || 'Uncategorized',
+      amount: roundCurrency(amount),
+      baselineAmount: roundCurrency(baselineAmount),
+      deviationRatio: roundCurrency(deviationRatio)
+    };
+  })
+    .filter((row) => row.deviationRatio >= 2 && row.amount >= 50)
+    .sort((left, right) => right.deviationRatio - left.deviationRatio || right.amount - left.amount)
+    .slice(0, limit);
+
+  return {
+    currency: 'EUR' as const,
+    from,
+    to,
+    outlierCount: rows.length,
+    highestDeviation: rows[0]?.deviationRatio || null,
+    rows
+  };
+}
+
+export async function getIncomeTrendByCategoryReport(
+  db: Db,
+  options: { from?: string; to?: string; limit?: number } = {}
+) {
+  const from = coerceIsoDate(options.from, DEFAULT_SYNC_START_DATE);
+  const to = coerceIsoDate(options.to, todayIsoDate());
+  const limit = Math.max(2, Math.min(Number(options.limit || 5), 8));
+
+  const rawRows = await db.collection(ENTRIES_COLLECTION)
+    .aggregate([
+      {
+        $match: {
+          date: { $gte: from, $lte: to },
+          entry_type: 'income',
+          is_deleted: { $ne: true }
+        }
+      },
+      {
+        $project: {
+          month: { $substr: ['$date', 0, 7] },
+          category: {
+            $ifNull: ['$category_name', 'Uncategorized']
+          },
+          amount: '$amount_eur'
+        }
+      },
+      {
+        $group: {
+          _id: {
+            month: '$month',
+            category: '$category'
+          },
+          amount: { $sum: '$amount' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          month: '$_id.month',
+          category: '$_id.category',
+          amount: { $round: ['$amount', 2] }
+        }
+      },
+      {
+        $sort: {
+          month: 1,
+          amount: -1
+        }
+      }
+    ])
+    .toArray() as Array<{ month: string; category: string; amount: number }>;
+
+  const categoryTotals = new Map<string, number>();
+  const monthCategoryValues = new Map<string, Map<string, number>>();
+
+  rawRows.forEach((row) => {
+    const category = row.category || 'Uncategorized';
+    categoryTotals.set(category, roundCurrency((categoryTotals.get(category) || 0) + Number(row.amount || 0)));
+
+    const valuesForMonth = monthCategoryValues.get(row.month) || new Map<string, number>();
+    valuesForMonth.set(category, roundCurrency(Number(row.amount || 0)));
+    monthCategoryValues.set(row.month, valuesForMonth);
+  });
+
+  const rankedCategories = Array.from(categoryTotals.entries()).sort((left, right) => right[1] - left[1]);
+  const topCategoryNames = rankedCategories.slice(0, limit).map(([category]) => category);
+  const remainingCategories = rankedCategories.slice(limit);
+  const hasOther = remainingCategories.length > 0;
+  const seriesNames = hasOther ? [...topCategoryNames, 'Other'] : topCategoryNames;
+  const months = listMonthKeys(from, to);
+
+  const rows: IncomeTrendByCategoryRow[] = months.map((month) => {
+    const valuesForMonth = monthCategoryValues.get(month) || new Map<string, number>();
+    const topValues = topCategoryNames.map((category) => ({
+      category,
+      amount: roundCurrency(valuesForMonth.get(category) || 0)
+    }));
+    const otherAmount = hasOther
+      ? remainingCategories.reduce((sum, [category]) => sum + (valuesForMonth.get(category) || 0), 0)
+      : 0;
+    const values = hasOther
+      ? [...topValues, { category: 'Other', amount: roundCurrency(otherAmount) }]
+      : topValues;
+    const total = values.reduce((sum, item) => sum + item.amount, 0);
+
+    return {
+      month,
+      total: roundCurrency(total),
+      values
+    };
+  });
+
+  const monthCount = Math.max(months.length, 1);
+  const categories: IncomeTrendByCategorySeries[] = seriesNames.map((category) => {
+    const total = roundCurrency(rows.reduce((sum, row) => {
+      const match = row.values.find((value) => value.category === category);
+      return sum + (match?.amount || 0);
+    }, 0));
+
+    return {
+      category,
+      total,
+      averageMonthly: roundCurrency(total / monthCount)
+    };
+  }).sort((left, right) => right.total - left.total);
+
+  const totalIncome = roundCurrency(rows.reduce((sum, row) => sum + row.total, 0));
+  const topCategory = categories.find((item) => item.category !== 'Other') || categories[0] || null;
+  const highestMonth = rows.reduce<IncomeTrendByCategoryRow | null>((best, row) => {
+    if (!best || row.total > best.total) {
+      return row;
+    }
+    return best;
+  }, null);
+
+  return {
+    currency: 'EUR' as const,
+    from,
+    to,
+    totalIncome,
+    averageMonthlyIncome: roundCurrency(totalIncome / monthCount),
+    topCategory: topCategory?.category || null,
+    highestMonth: highestMonth?.month || null,
+    categories,
     rows
   };
 }
