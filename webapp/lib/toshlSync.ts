@@ -20,6 +20,7 @@ const DEFAULT_SYNC_START_DATE = '2025-01-01';
 const DEFAULT_RECONCILE_DAYS = 90;
 const OVERALL_SYNC_LOCK_KEY = 'toshl-full-sync';
 const DEFAULT_LOCK_TTL_MS = 10 * 60 * 1000;
+const IGNORED_CATEGORY_IDS = new Set(['reconciliation']);
 
 export interface SyncRequestOptions {
   startDate?: string;
@@ -139,6 +140,10 @@ function normalizeTag(tag: ToshlTag) {
     type: tag.type || null,
     synced_at: new Date()
   };
+}
+
+function shouldMirrorEntry(entry: ToshlEntry) {
+  return !IGNORED_CATEGORY_IDS.has(String(entry.category || ''));
 }
 
 function normalizeEntry(
@@ -357,8 +362,10 @@ export async function syncToshlMirror(db: Db, options: SyncRequestOptions = {}):
       },
       clientOptions
     );
+    const mirroredEntries = entries.filter(shouldMirrorEntry);
     console.log('[toshl-sync] fetched entries', {
       count: entries.length,
+      mirroredCount: mirroredEntries.length,
       from: effectiveStartDate,
       to: requestedEndDate
     });
@@ -367,7 +374,7 @@ export async function syncToshlMirror(db: Db, options: SyncRequestOptions = {}):
     let upserted = 0;
     let modified = 0;
 
-    for (const entry of entries) {
+    for (const entry of mirroredEntries) {
       const normalized = normalizeEntry(entry, {
         accountNames,
         categoryNames,
@@ -387,22 +394,35 @@ export async function syncToshlMirror(db: Db, options: SyncRequestOptions = {}):
       modified += result.modifiedCount;
     }
 
-    const fetchedIds = entries.map(entry => entry.id);
+    const fetchedIds = mirroredEntries.map(entry => entry.id);
     const entryDeleteResult = await entryCollection.deleteMany({
-      date: {
-        $gte: effectiveStartDate,
-        $lte: requestedEndDate
-      },
-      toshl_id: {
-        $nin: fetchedIds
-      }
+      $and: [
+        {
+          date: {
+            $gte: effectiveStartDate,
+            $lte: requestedEndDate
+          }
+        },
+        {
+          $or: [
+            {
+              toshl_id: {
+                $nin: fetchedIds
+              }
+            },
+            {
+              category_id: 'reconciliation'
+            }
+          ]
+        }
+      ]
     });
 
     await setResourceSyncState(db, 'entries', {
       last_successful_at: new Date(),
       last_successful_from: effectiveStartDate,
       last_successful_to: requestedEndDate,
-      fetched_count: entries.length,
+      fetched_count: mirroredEntries.length,
       reconcile_days: reconcileDays
     });
     console.log('[toshl-sync] completed entries sync', {
@@ -413,7 +433,7 @@ export async function syncToshlMirror(db: Db, options: SyncRequestOptions = {}):
 
     resourceResults.push({
       resource: 'entries',
-      fetched: entries.length,
+      fetched: mirroredEntries.length,
       upserted,
       modified,
       deleted: entryDeleteResult.deletedCount || 0,

@@ -887,6 +887,107 @@ test('monthly balance report aggregates entries from Mongo and excludes transfer
   ]);
 });
 
+test('sync mirror ignores reconciliation category entries', async () => {
+  const { syncToshlMirror } = loadTsModule('lib/toshlSync.ts', {
+    './toshl': {
+      fetchToshlCollection: async (path) => {
+        if (path === '/accounts') {
+          return [{ id: 'acc-1', name: 'Cash', currency: { code: 'EUR' } }];
+        }
+
+        if (path === '/categories') {
+          return [
+            { id: 'reconciliation', name: 'Reconciliation', type: 'expense' },
+            { id: 'cat-1', name: 'General', type: 'expense' }
+          ];
+        }
+
+        if (path === '/tags') {
+          return [];
+        }
+
+        if (path === '/entries') {
+          return [
+            {
+              id: 'entry-1',
+              amount: -12,
+              date: '2026-04-05',
+              currency: { code: 'EUR' },
+              account: 'acc-1',
+              category: 'cat-1'
+            },
+            {
+              id: 'entry-2',
+              amount: -9,
+              date: '2026-04-05',
+              currency: { code: 'EUR' },
+              account: 'acc-1',
+              category: 'reconciliation'
+            }
+          ];
+        }
+
+        throw new Error(`Unexpected path ${path}`);
+      },
+      todayIsoDate: () => '2026-04-05'
+    }
+  });
+
+  const entryUpdates = [];
+  let entryDeleteQuery;
+
+  const db = {
+    collection(name) {
+      if (name === 'sync_locks') {
+        return {
+          createIndex: async () => {},
+          deleteMany: async () => {},
+          insertOne: async () => {},
+          deleteOne: async () => {}
+        };
+      }
+
+      if (name === 'sync_state') {
+        return {
+          createIndex: async () => {},
+          findOne: async () => null,
+          updateOne: async () => ({})
+        };
+      }
+
+      if (name === 'toshl_entries') {
+        return {
+          createIndex: async () => {},
+          updateOne: async (filter, update) => {
+            entryUpdates.push({ filter, update });
+            return { upsertedCount: 1, modifiedCount: 0 };
+          },
+          deleteMany: async (query) => {
+            entryDeleteQuery = query;
+            return { deletedCount: 0 };
+          }
+        };
+      }
+
+      return {
+        createIndex: async () => {},
+        updateOne: async () => ({ upsertedCount: 1, modifiedCount: 0 }),
+        deleteMany: async () => ({ deletedCount: 0 })
+      };
+    }
+  };
+
+  const result = await syncToshlMirror(db, {
+    startDate: '2026-04-01',
+    endDate: '2026-04-05'
+  });
+
+  assert.equal(result.resources.find((resource) => resource.resource === 'entries').fetched, 1);
+  assert.equal(entryUpdates.length, 1);
+  assert.equal(entryUpdates[0].filter.toshl_id, 'entry-1');
+  assert.equal(entryDeleteQuery.$and[1].$or[1].category_id, 'reconciliation');
+});
+
 test('syncStatus returns sorted sync resources and active lock state', async () => {
   const handler = loadApiHandler('pages/api/syncStatus.ts', {
     '../../lib/mongodb': {
