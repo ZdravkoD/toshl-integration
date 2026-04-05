@@ -17,7 +17,9 @@ test('loads config from Script Properties', () => {
       TOSHL_ACCESS_TOKEN: 'token-123',
       BANK_EMAIL: 'alerts@example.com',
       EMAIL_SEARCH_QUERY: 'subject:(Alert)',
-      WEB_API_BASE_URL: 'https://api.example.test'
+      WEB_API_BASE_URL: 'https://api.example.test',
+      WEB_API_USERNAME: 'api-user',
+      WEB_API_PASSWORD: 'api-pass'
     }
   });
 
@@ -25,6 +27,8 @@ test('loads config from Script Properties', () => {
   assert.strictEqual(context.CONFIG.BANK_EMAIL, 'alerts@example.com');
   assert.strictEqual(context.CONFIG.EMAIL_SEARCH_QUERY, 'subject:(Alert)');
   assert.strictEqual(context.CONFIG.WEB_API_BASE_URL, 'https://api.example.test');
+  assert.strictEqual(context.CONFIG.WEB_API_USERNAME, 'api-user');
+  assert.strictEqual(context.CONFIG.WEB_API_PASSWORD, 'api-pass');
 });
 
 test('throws when a required Script Property is missing', () => {
@@ -34,10 +38,26 @@ test('throws when a required Script Property is missing', () => {
         TOSHL_ACCESS_TOKEN: 'token-123',
         BANK_EMAIL: 'alerts@example.com',
         EMAIL_SEARCH_QUERY: 'subject:(Alert)',
-        WEB_API_BASE_URL: null
+        WEB_API_BASE_URL: 'https://api.example.test',
+        WEB_API_USERNAME: 'api-user',
+        WEB_API_PASSWORD: null
       }
     });
-  }, /Missing required Script Property: WEB_API_BASE_URL/);
+  }, /Missing required Script Property: WEB_API_PASSWORD/);
+});
+
+test('builds a basic auth header for web API calls', () => {
+  const { context } = loadAppsScript({
+    scriptProperties: {
+      WEB_API_USERNAME: 'api-user',
+      WEB_API_PASSWORD: 'api-pass'
+    }
+  });
+
+  assert.strictEqual(
+    context._getWebApiAuthHeader(),
+    'Basic YXBpLXVzZXI6YXBpLXBhc3M='
+  );
 });
 
 test('extracts Postbank Bulgarian amount and currency', () => {
@@ -138,6 +158,10 @@ test('checks processed-message state through the web API', () => {
   const { context } = loadAppsScript({
     fetchImpl(url) {
       assert.ok(url.includes('/getProcessedMessage?message_id=msg-123'));
+      assert.strictEqual(
+        arguments[1].headers.Authorization,
+        'Basic YXBpLXVzZXI6YXBpLXBhc3M='
+      );
       return { statusCode: 200, body: { exists: true } };
     }
   });
@@ -150,6 +174,10 @@ test('saves processed-message metadata through the web API', () => {
   const { context } = loadAppsScript({
     fetchImpl(url, requestOptions) {
       assert.ok(url.endsWith('/saveProcessedMessage'));
+      assert.strictEqual(
+        requestOptions.headers.Authorization,
+        'Basic YXBpLXVzZXI6YXBpLXBhc3M='
+      );
       capturedPayload = JSON.parse(requestOptions.payload);
       return { statusCode: 200, body: { success: true } };
     }

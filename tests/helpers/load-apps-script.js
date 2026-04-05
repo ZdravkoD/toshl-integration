@@ -24,7 +24,9 @@ function loadAppsScript(options = {}) {
       TOSHL_ACCESS_TOKEN: 'test-token',
       BANK_EMAIL: 'statements@postbank.bg',
       EMAIL_SEARCH_QUERY: 'subject:(Успешна трансакция с кредитна карта)',
-      WEB_API_BASE_URL: 'https://example.test/api'
+      WEB_API_BASE_URL: 'https://example.test/api',
+      WEB_API_USERNAME: 'api-user',
+      WEB_API_PASSWORD: 'api-pass'
     },
     options.scriptProperties || {}
   );
@@ -46,6 +48,11 @@ function loadAppsScript(options = {}) {
     RegExp,
     encodeURIComponent,
     decodeURIComponent,
+    Utilities: {
+      base64Encode(value) {
+        return Buffer.from(String(value), 'utf8').toString('base64');
+      }
+    },
     Logger: {
       log(message) {
         logs.push(String(message));
@@ -100,6 +107,7 @@ function loadAppsScript(options = {}) {
       _extractStoreName,
       _extractDate,
       _findExistingToshlEntry,
+      _getWebApiAuthHeader,
       _isMessageHandled,
       _saveProcessedMessage
     };

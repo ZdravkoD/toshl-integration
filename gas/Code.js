@@ -50,11 +50,30 @@ function _loadConfig() {
     TOSHL_ACCESS_TOKEN: _getRequiredScriptProperty('TOSHL_ACCESS_TOKEN'),
     BANK_EMAIL: _getRequiredScriptProperty('BANK_EMAIL'),
     EMAIL_SEARCH_QUERY: _getRequiredScriptProperty('EMAIL_SEARCH_QUERY'),
-    WEB_API_BASE_URL: _getRequiredScriptProperty('WEB_API_BASE_URL')
+    WEB_API_BASE_URL: _getRequiredScriptProperty('WEB_API_BASE_URL'),
+    WEB_API_USERNAME: _getRequiredScriptProperty('WEB_API_USERNAME'),
+    WEB_API_PASSWORD: _getRequiredScriptProperty('WEB_API_PASSWORD')
   });
 }
 
 const CONFIG = _loadConfig();
+
+function _getWebApiAuthHeader() {
+  const credentials = CONFIG.WEB_API_USERNAME + ':' + CONFIG.WEB_API_PASSWORD;
+  const encoded = Utilities.base64Encode(credentials);
+  return 'Basic ' + encoded;
+}
+
+function _getWebApiOptions(options) {
+  const baseHeaders = {
+    'Authorization': _getWebApiAuthHeader()
+  };
+  
+  const mergedOptions = Object.assign({}, options || {});
+  mergedOptions.headers = Object.assign({}, baseHeaders, (options && options.headers) || {});
+  
+  return mergedOptions;
+}
 
 // ==================== EMAIL PARSING ====================
 
@@ -379,7 +398,7 @@ function syncToshlTagsToMongoDB() {
   };
   
   try {
-    const response = UrlFetchApp.fetch(url, options);
+    const response = UrlFetchApp.fetch(url, _getWebApiOptions(options));
     const responseCode = response.getResponseCode();
     
     if (responseCode >= 200 && responseCode < 300) {
@@ -528,7 +547,7 @@ function syncToshlCategoriesToMongoDB() {
   };
   
   try {
-    const response = UrlFetchApp.fetch(url, options);
+    const response = UrlFetchApp.fetch(url, _getWebApiOptions(options));
     const responseCode = response.getResponseCode();
     
     if (responseCode >= 200 && responseCode < 300) {
@@ -639,7 +658,7 @@ function _getCategoryFromWebAPI(storeName) {
   };
   
   try {
-    const response = UrlFetchApp.fetch(url, options);
+    const response = UrlFetchApp.fetch(url, _getWebApiOptions(options));
     const responseCode = response.getResponseCode();
     
     if (responseCode >= 200 && responseCode < 300) {
@@ -697,7 +716,7 @@ function _savePendingTransaction(transaction, emailId) {
   };
   
   try {
-    const response = UrlFetchApp.fetch(url, options);
+    const response = UrlFetchApp.fetch(url, _getWebApiOptions(options));
     const responseCode = response.getResponseCode();
     
     if (responseCode >= 200 && responseCode < 300) {
@@ -734,7 +753,7 @@ function _getPendingTransactions() {
   };
   
   try {
-    const response = UrlFetchApp.fetch(url, options);
+    const response = UrlFetchApp.fetch(url, _getWebApiOptions(options));
     const responseCode = response.getResponseCode();
     
     if (responseCode >= 200 && responseCode < 300) {
@@ -763,7 +782,7 @@ function _isMessageHandled(messageId) {
   };
   
   try {
-    const response = UrlFetchApp.fetch(url, options);
+    const response = UrlFetchApp.fetch(url, _getWebApiOptions(options));
     const responseCode = response.getResponseCode();
     
     if (responseCode >= 200 && responseCode < 300) {
@@ -804,7 +823,7 @@ function _saveProcessedMessage(messageId, threadId, subject, status, transaction
   };
   
   try {
-    const response = UrlFetchApp.fetch(url, options);
+    const response = UrlFetchApp.fetch(url, _getWebApiOptions(options));
     const responseCode = response.getResponseCode();
     
     if (responseCode >= 200 && responseCode < 300) {
@@ -833,7 +852,7 @@ function _markPendingAsProcessed(pendingId) {
   };
   
   try {
-    const response = UrlFetchApp.fetch(url, options);
+    const response = UrlFetchApp.fetch(url, _getWebApiOptions(options));
     const responseCode = response.getResponseCode();
     
     if (responseCode >= 200 && responseCode < 300) {
