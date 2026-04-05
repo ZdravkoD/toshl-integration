@@ -2,6 +2,9 @@
   "name": "toshl-integration",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=20 <21"
+  },
   "scripts": {
     "test": "node tests/run-tests.js",
     "test:apps-script": "node tests/run-tests.js"
