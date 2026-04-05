@@ -205,6 +205,113 @@ test('saves processed-message metadata through the web API', () => {
   });
 });
 
+test('initializes historical import state in Script Properties', () => {
+  const { context, scriptProperties } = loadAppsScript();
+
+  const state = context._initializeHistoricalImport(
+    new Date('2025-01-01T00:00:00Z'),
+    new Date('2025-01-31T00:00:00Z'),
+    { batchSize: 10, windowDays: 3 }
+  );
+
+  assert.strictEqual(state.startDate, '2025-01-01');
+  assert.strictEqual(state.endDate, '2025-01-31');
+  assert.strictEqual(state.cursorDate, '2025-01-01');
+  assert.strictEqual(state.offset, 0);
+  assert.strictEqual(state.batchSize, 10);
+  assert.strictEqual(state.windowDays, 3);
+  assert.ok(scriptProperties.HISTORICAL_IMPORT_STATE);
+});
+
+test('processes one historical import batch and advances offset within the same window', () => {
+  let capturedQuery = null;
+  const { context } = loadAppsScript({
+    gmailSearchImpl(query, start, max) {
+      capturedQuery = { query, start, max };
+      return [{}];
+    }
+  });
+
+  context._initializeHistoricalImport(
+    new Date('2025-01-01T00:00:00Z'),
+    new Date('2025-01-31T00:00:00Z'),
+    { batchSize: 1, windowDays: 7 }
+  );
+  context._processEmailThread = () => {};
+
+  const processed = context._processHistoricalImportBatch(context._getHistoricalImportState());
+  const updated = context._getHistoricalImportState();
+
+  assert.strictEqual(processed, 1);
+  assert.ok(capturedQuery.query.includes('after:2025/01/01'));
+  assert.ok(capturedQuery.query.includes('before:2025/01/08'));
+  assert.strictEqual(capturedQuery.start, 0);
+  assert.strictEqual(capturedQuery.max, 1);
+  assert.strictEqual(updated.offset, 1);
+  assert.strictEqual(updated.cursorDate, '2025-01-01');
+  assert.strictEqual(updated.totalProcessedThreads, 1);
+});
+
+test('advances historical import cursor when a window is exhausted', () => {
+  const { context } = loadAppsScript({
+    gmailSearchImpl() {
+      return [];
+    }
+  });
+
+  context._initializeHistoricalImport(
+    new Date('2025-01-01T00:00:00Z'),
+    new Date('2025-01-31T00:00:00Z'),
+    { batchSize: 5, windowDays: 7 }
+  );
+
+  const processed = context._processHistoricalImportBatch(context._getHistoricalImportState());
+  const updated = context._getHistoricalImportState();
+
+  assert.strictEqual(processed, 0);
+  assert.strictEqual(updated.offset, 0);
+  assert.strictEqual(updated.cursorDate, '2025-01-08');
+  assert.strictEqual(updated.completed, false);
+});
+
+test('marks historical import complete when the end date is reached', () => {
+  const { context } = loadAppsScript({
+    gmailSearchImpl() {
+      return [];
+    }
+  });
+
+  context._initializeHistoricalImport(
+    new Date('2025-01-01T00:00:00Z'),
+    new Date('2025-01-03T00:00:00Z'),
+    { batchSize: 5, windowDays: 7 }
+  );
+
+  context._processHistoricalImportBatch(context._getHistoricalImportState());
+  const updated = context._getHistoricalImportState();
+
+  assert.strictEqual(updated.completed, true);
+  assert.strictEqual(updated.cursorDate, '2025-01-04');
+});
+
+test('returns historical import status and can reset the state', () => {
+  const { context, logs } = loadAppsScript();
+
+  context._initializeHistoricalImport(
+    new Date('2025-01-01T00:00:00Z'),
+    new Date('2025-01-10T00:00:00Z'),
+    { batchSize: 10, windowDays: 2 }
+  );
+
+  const status = context.getHistoricalImportStatus();
+  assert.strictEqual(status.startDate, '2025-01-01');
+  assert.strictEqual(status.endDate, '2025-01-10');
+
+  context.resetHistoricalImport();
+  assert.strictEqual(context._getHistoricalImportState(), null);
+  assert.ok(logs.some(log => log.includes('Historical import state cleared')));
+});
+
 async function main() {
   let failures = 0;
 

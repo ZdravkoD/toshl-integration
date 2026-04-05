@@ -34,6 +34,9 @@ function loadAppsScript(options = {}) {
   const fetchImpl = options.fetchImpl || function () {
     throw new Error('Unexpected UrlFetchApp.fetch call in test');
   };
+  const gmailSearchImpl = options.gmailSearchImpl || function () {
+    return [];
+  };
 
   const context = {
     console,
@@ -65,6 +68,12 @@ function loadAppsScript(options = {}) {
             return Object.prototype.hasOwnProperty.call(scriptProperties, name)
               ? scriptProperties[name]
               : null;
+          },
+          setProperty(name, value) {
+            scriptProperties[name] = value;
+          },
+          deleteProperty(name) {
+            delete scriptProperties[name];
           }
         };
       }
@@ -82,7 +91,11 @@ function loadAppsScript(options = {}) {
         return createFetchResponse(statusCode, body);
       }
     },
-    GmailApp: {},
+    GmailApp: {
+      search(query, start, max) {
+        return gmailSearchImpl(query, start, max);
+      }
+    },
     ScriptApp: {},
     Session: {
       getActiveUser() {
@@ -107,15 +120,23 @@ function loadAppsScript(options = {}) {
       _extractStoreName,
       _extractDate,
       _findExistingToshlEntry,
+      _getHistoricalImportState,
+      _initializeHistoricalImport,
+      _processHistoricalImportBatch,
       _getWebApiAuthHeader,
       _isMessageHandled,
-      _saveProcessedMessage
+      _saveProcessedMessage,
+      continueHistoricalImport,
+      getHistoricalImportStatus,
+      processLastFiveMonthsEmails,
+      resetHistoricalImport
     };
   `, context);
 
   return {
     context: Object.assign(context, context.__testExports),
     logs,
+    scriptProperties,
     createFetchResponse
   };
 }

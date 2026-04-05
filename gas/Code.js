@@ -1670,57 +1670,267 @@ function processLastWeekEmails() {
 }
 
 /**
- * PUBLIC: Process all bank emails from the past 5 months
- * Uses message-level dedupe plus Toshl existence checks, so it is safe to rerun.
+ * Historical import state storage key
+ * @private
+ */
+const HISTORICAL_IMPORT_STATE_KEY = 'HISTORICAL_IMPORT_STATE';
+
+/**
+ * Format a Date for Gmail search (YYYY/MM/DD)
+ * @private
+ */
+function _formatDateForGmail(date) {
+  return date.getFullYear() + '/' +
+    String(date.getMonth() + 1).padStart(2, '0') + '/' +
+    String(date.getDate()).padStart(2, '0');
+}
+
+/**
+ * Parse an ISO date string as a local date at midnight
+ * @private
+ */
+function _parseLocalISODate(value) {
+  const parts = String(value).split('-').map(Number);
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+/**
+ * Add days to a date without mutating the input
+ * @private
+ */
+function _addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+/**
+ * Get the persisted historical import state
+ * @private
+ */
+function _getHistoricalImportState() {
+  const raw = PropertiesService.getScriptProperties().getProperty(HISTORICAL_IMPORT_STATE_KEY);
+  return raw ? JSON.parse(raw) : null;
+}
+
+/**
+ * Save historical import state
+ * @private
+ */
+function _saveHistoricalImportState(state) {
+  PropertiesService.getScriptProperties().setProperty(
+    HISTORICAL_IMPORT_STATE_KEY,
+    JSON.stringify(state)
+  );
+}
+
+/**
+ * Remove historical import state
+ * @private
+ */
+function _clearHistoricalImportState() {
+  PropertiesService.getScriptProperties().deleteProperty(HISTORICAL_IMPORT_STATE_KEY);
+}
+
+/**
+ * Initialize a resumable historical import
+ * @private
+ */
+function _initializeHistoricalImport(startDate, endDate, options) {
+  const normalizedOptions = options || {};
+  const state = {
+    startDate: _formatDateISO(startDate),
+    endDate: _formatDateISO(endDate),
+    cursorDate: _formatDateISO(startDate),
+    offset: 0,
+    batchSize: normalizedOptions.batchSize || 25,
+    windowDays: normalizedOptions.windowDays || 7,
+    totalProcessedThreads: 0,
+    runs: 0,
+    completed: false,
+    lastRunAt: null,
+    lastProcessedCount: 0,
+    lastQuery: null
+  };
+
+  _saveHistoricalImportState(state);
+  return state;
+}
+
+/**
+ * Build a Gmail search query for a historical import window
+ * @private
+ */
+function _buildHistoricalImportQuery(windowStart, windowEndExclusive) {
+  let query = `from:${CONFIG.BANK_EMAIL} after:${_formatDateForGmail(windowStart)} before:${_formatDateForGmail(windowEndExclusive)}`;
+  if (CONFIG.EMAIL_SEARCH_QUERY) {
+    query += ' ' + CONFIG.EMAIL_SEARCH_QUERY;
+  }
+  return query;
+}
+
+/**
+ * Process one bounded batch from the persisted historical import state
+ * @private
+ */
+function _processHistoricalImportBatch(state) {
+  if (!state || state.completed) {
+    Logger.log('Historical import is already complete or not initialized');
+    return 0;
+  }
+
+  const cursorDate = _parseLocalISODate(state.cursorDate);
+  const endDateExclusive = _addDays(_parseLocalISODate(state.endDate), 1);
+
+  if (cursorDate >= endDateExclusive) {
+    state.completed = true;
+    state.lastRunAt = new Date().toISOString();
+    state.lastProcessedCount = 0;
+    _saveHistoricalImportState(state);
+    Logger.log('Historical import complete');
+    return 0;
+  }
+
+  const windowEndExclusive = _addDays(
+    cursorDate,
+    Math.min(state.windowDays, Math.max(1, Math.ceil((endDateExclusive - cursorDate) / 86400000)))
+  );
+  const searchQuery = _buildHistoricalImportQuery(cursorDate, windowEndExclusive);
+
+  Logger.log('Historical import query: ' + searchQuery);
+  Logger.log('Window: ' + _formatDateISO(cursorDate) + ' to ' + _formatDateISO(_addDays(windowEndExclusive, -1)) + ', offset=' + state.offset + ', batchSize=' + state.batchSize);
+
+  const threads = GmailApp.search(searchQuery, state.offset, state.batchSize);
+  let processedCount = 0;
+
+  for (let thread of threads) {
+    try {
+      _processEmailThread(thread);
+      processedCount++;
+    } catch (e) {
+      Logger.log('Error processing historical import thread: ' + e.toString());
+    }
+  }
+
+  state.totalProcessedThreads += processedCount;
+  state.runs += 1;
+  state.lastRunAt = new Date().toISOString();
+  state.lastProcessedCount = processedCount;
+  state.lastQuery = searchQuery;
+
+  if (threads.length === state.batchSize) {
+    state.offset += state.batchSize;
+  } else {
+    state.cursorDate = _formatDateISO(windowEndExclusive);
+    state.offset = 0;
+
+    if (_parseLocalISODate(state.cursorDate) >= endDateExclusive) {
+      state.completed = true;
+    }
+  }
+
+  _saveHistoricalImportState(state);
+  Logger.log('Historical import batch processed ' + processedCount + ' thread(s)');
+  return processedCount;
+}
+
+/**
+ * PUBLIC: Start a resumable historical import for the past 5 months and process one batch
+ * Safe to rerun. Progress is stored in Script Properties.
  */
 function processLastFiveMonthsEmails() {
-  Logger.log('=== Processing Bank Emails From The Past 5 Months ===');
-  
-  const startDate = new Date();
-  startDate.setMonth(startDate.getMonth() - 5);
-  
-  const year = startDate.getFullYear();
-  const month = String(startDate.getMonth() + 1).padStart(2, '0');
-  const day = String(startDate.getDate()).padStart(2, '0');
-  
-  let searchQuery = `from:${CONFIG.BANK_EMAIL} after:${year}/${month}/${day}`;
-  if (CONFIG.EMAIL_SEARCH_QUERY) {
-    searchQuery += ' ' + CONFIG.EMAIL_SEARCH_QUERY;
+  Logger.log('=== Starting Resumable Historical Import For The Past 5 Months ===');
+
+  const existingState = _getHistoricalImportState();
+  let state = existingState;
+
+  if (!state || state.completed) {
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 5);
+    const endDate = new Date();
+
+    state = _initializeHistoricalImport(startDate, endDate, {
+      batchSize: 25,
+      windowDays: 7
+    });
   }
-  
-  Logger.log('Searching for emails with query: ' + searchQuery);
-  
-  const batchSize = 100;
-  let start = 0;
-  let totalProcessed = 0;
-  
-  while (true) {
-    const threads = GmailApp.search(searchQuery, start, batchSize);
-    
-    if (!threads || threads.length === 0) {
-      break;
-    }
-    
-    Logger.log('Processing batch starting at offset ' + start + ' (' + threads.length + ' thread(s))');
-    
-    for (let thread of threads) {
-      try {
-        _processEmailThread(thread);
-        totalProcessed++;
-      } catch (e) {
-        Logger.log('Error processing thread: ' + e.toString());
-      }
-    }
-    
-    if (threads.length < batchSize) {
-      break;
-    }
-    
-    start += batchSize;
+
+  const processedCount = _processHistoricalImportBatch(state);
+  const updatedState = _getHistoricalImportState();
+
+  if (updatedState && updatedState.completed) {
+    Logger.log('=== Historical import completed after processing ' + updatedState.totalProcessedThreads + ' thread(s) across ' + updatedState.runs + ' run(s) ===');
+  } else {
+    Logger.log('=== Historical import paused and can be resumed ===');
   }
-  
-  Logger.log('=== Processed ' + totalProcessed + ' thread(s) from the past 5 months ===');
-  return totalProcessed;
+
+  return processedCount;
+}
+
+/**
+ * PUBLIC: Continue the current resumable historical import and process one batch
+ */
+function continueHistoricalImport() {
+  Logger.log('=== Continuing Historical Import ===');
+
+  const state = _getHistoricalImportState();
+  if (!state) {
+    Logger.log('No historical import is currently initialized');
+    return 0;
+  }
+
+  const processedCount = _processHistoricalImportBatch(state);
+  const updatedState = _getHistoricalImportState();
+
+  if (updatedState && updatedState.completed) {
+    Logger.log('Historical import completed');
+  } else {
+    Logger.log('Historical import progress saved');
+  }
+
+  return processedCount;
+}
+
+/**
+ * PUBLIC: Reset the resumable historical import state
+ */
+function resetHistoricalImport() {
+  _clearHistoricalImportState();
+  Logger.log('Historical import state cleared');
+}
+
+/**
+ * PUBLIC: View resumable historical import status
+ */
+function getHistoricalImportStatus() {
+  const state = _getHistoricalImportState();
+
+  if (!state) {
+    Logger.log('No historical import is currently initialized');
+    return null;
+  }
+
+  const status = {
+    startDate: state.startDate,
+    endDate: state.endDate,
+    cursorDate: state.cursorDate,
+    offset: state.offset,
+    batchSize: state.batchSize,
+    windowDays: state.windowDays,
+    totalProcessedThreads: state.totalProcessedThreads,
+    runs: state.runs,
+    completed: state.completed,
+    lastRunAt: state.lastRunAt,
+    lastProcessedCount: state.lastProcessedCount,
+    lastQuery: state.lastQuery
+  };
+
+  Logger.log('=== Historical Import Status ===');
+  Object.keys(status).forEach(key => {
+    Logger.log(key + ': ' + status[key]);
+  });
+
+  return status;
 }
 
 /**
@@ -1966,60 +2176,17 @@ function viewPendingTransactions() {
 }
 
 /**
- * PUBLIC: Backfill process bank emails in a given date range (inclusive start, inclusive end)
- * Your requested range:
- *   01.01.2025 to 01.08.2025 (DD.MM.YYYY) => 2025/01/01 to 2025/08/01
- *
- * Gmail search uses:
- *   after:YYYY/MM/DD   (strictly after midnight that day)
- *   before:YYYY/MM/DD  (strictly before midnight that day)
- *
- * So to INCLUDE 2025/08/01, we set before:2025/08/02
+ * PUBLIC: Initialize a resumable historical import for 2025-01-01 through 2025-08-01 and process one batch
  */
 function processEmails_2025_01_01_to_2025_08_01() {
-  Logger.log('=== Backfill Processing: 2025/01/01 to 2025/08/01 ===');
-
-  const startInclusive = '2025/01/01';
-  const endInclusive = '2025/08/01';
-  const beforeExclusive = '2025/08/01';
-
-  // Build Gmail query
-  let searchQuery = `from:${CONFIG.BANK_EMAIL} after:${startInclusive} before:${beforeExclusive}`;
-
-  // Keep your subject filter if you want ONLY those transaction emails
-  if (CONFIG.EMAIL_SEARCH_QUERY) {
-    searchQuery += ` ${CONFIG.EMAIL_SEARCH_QUERY}`;
-  }
-
-  Logger.log('Searching with query: ' + searchQuery);
-
-  // GmailApp.search(query, start, max) supports paging
-  const pageSize = 100;
-  let start = 0;
-  let totalThreads = 0;
-  let processedThreads = 0;
-
-  while (true) {
-    const threads = GmailApp.search(searchQuery, start, pageSize);
-    if (!threads || threads.length === 0) break;
-
-    totalThreads += threads.length;
-    Logger.log(`Fetched ${threads.length} threads (start=${start})`);
-
-    for (const thread of threads) {
-      try {
-        processEmailThread_(thread);
-        processedThreads++;
-      } catch (e) {
-        Logger.log('Error processing thread: ' + e.toString());
-      }
+  Logger.log('=== Initializing Historical Import: 2025-01-01 to 2025-08-01 ===');
+  _initializeHistoricalImport(
+    new Date(2025, 0, 1),
+    new Date(2025, 7, 1),
+    {
+      batchSize: 25,
+      windowDays: 7
     }
-
-    start += threads.length;
-
-    // Safety break: if less than a full page returned, we’re done
-    if (threads.length < pageSize) break;
-  }
-
-  Logger.log(`=== Backfill Complete. Processed ${processedThreads} thread(s) out of ${totalThreads} fetched ===`);
+  );
+  return continueHistoricalImport();
 }
