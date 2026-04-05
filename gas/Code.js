@@ -129,19 +129,24 @@ function _parseTransaction(emailBody, emailDate) {
  * @private
  */
 function _extractAmountAndCurrency(text) {
+  const normalizeAmount = amountString =>
+    amountString
+      .replace(/[\s\u00A0]/g, '')
+      .replace(/,/g, '');
+
   // Postbank Bulgaria patterns (Bulgarian and English)
   const postbankPatterns = [
     // Bulgarian: "на стойност 665.15 BGN"
-    /(?:на стойност|стойност)\s+(\d+[,\d]*\.?\d*)\s*(BGN|EUR|USD)/i,
+    /(?:на стойност|стойност)\s+(\d[\d\s\u00A0,]*\.?\d*)\s*(BGN|EUR|USD)/i,
     // English: "for amount 665.15 BGN"
-    /(?:for amount|amount)\s+(\d+[,\d]*\.?\d*)\s*(BGN|EUR|USD)/i,
+    /(?:for amount|amount)\s+(\d[\d\s\u00A0,]*\.?\d*)\s*(BGN|EUR|USD)/i,
   ];
   
   // Try Postbank-specific patterns first
   for (let pattern of postbankPatterns) {
     const match = text.match(pattern);
     if (match) {
-      const amountStr = match[1].replace(/,/g, '');
+      const amountStr = normalizeAmount(match[1]);
       const amount = parseFloat(amountStr);
       const currency = match[2].toUpperCase();
       
@@ -153,15 +158,15 @@ function _extractAmountAndCurrency(text) {
   
   // Fallback to generic patterns
   const genericPatterns = [
-    /(\d+[,\d]*\.?\d*)\s*(USD|EUR|BGN)/i,           // 123.45 USD/EUR/BGN
-    /\$(\d+[,\d]*\.?\d*)/,                          // $123.45 (assume USD)
-    /€(\d+[,\d]*\.?\d*)/,                           // €123.45 (EUR)
+    /(\d[\d\s\u00A0,]*\.?\d*)\s*(USD|EUR|BGN)/i,   // 123.45 USD/EUR/BGN
+    /\$(\d[\d\s\u00A0,]*\.?\d*)/,                  // $123.45 (assume USD)
+    /€(\d[\d\s\u00A0,]*\.?\d*)/,                   // €123.45 (EUR)
   ];
   
   for (let pattern of genericPatterns) {
     const match = text.match(pattern);
     if (match) {
-      const amountStr = match[1].replace(/,/g, '');
+      const amountStr = normalizeAmount(match[1]);
       const amount = parseFloat(amountStr);
       let currency = match[2] ? match[2].toUpperCase() : null;
       

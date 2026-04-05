@@ -74,6 +74,15 @@ test('extracts Postbank English amount and currency', () => {
   assert.deepStrictEqual(normalize(result), { amount: 28, currency: 'EUR' });
 });
 
+test('extracts Postbank amounts with spaces as thousands separators', () => {
+  const { context } = loadAppsScript();
+  const result = context._extractAmountAndCurrency(
+    'Успешна трансакция с кредитна карта от Пощенска банка Mastercard World Premium XX-4020 на стойност 4 600.00 EUR в MBAL SVETA SOFIYA EOOD\\MBAL SVETA SOFIYA на 20.02.2026 09:15:44'
+  );
+
+  assert.deepStrictEqual(normalize(result), { amount: 4600, currency: 'EUR' });
+});
+
 test('extracts and cleans merchant name from Bulgarian Postbank emails', () => {
   const { context } = loadAppsScript();
   const store = context._extractStoreName('Успешна трансакция в MR. BRICOLAGE SOFIA 3\\MR. BRICOLAGE SOFI на 07.11.2025 20:03:38');
