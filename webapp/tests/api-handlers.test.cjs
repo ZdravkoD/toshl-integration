@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const {
   createMockReq,
   createMockRes,
-  loadApiHandler
+  loadApiHandler,
+  loadTsModule
 } = require('./helpers/load-api-handler.cjs');
 
 test('getCategory returns 405 for unsupported methods', async () => {
@@ -759,4 +760,184 @@ test('syncTags rejects invalid payloads', async () => {
 
   assert.equal(res.statusCode, 400);
   assert.deepEqual(res.body, { error: 'Invalid tags data' });
+});
+
+test('syncToshl forwards parsed sync options to the sync engine', async () => {
+  let capturedOptions;
+
+  const handler = loadApiHandler('pages/api/syncToshl.ts', {
+    '../../lib/mongodb': {
+      connectToDatabase: async () => ({ db: { name: 'mock-db' } })
+    },
+    '../../lib/toshlSync': {
+      syncToshlMirror: async (_db, options) => {
+        capturedOptions = options;
+        return {
+          startedAt: '2026-04-05T10:00:00.000Z',
+          finishedAt: '2026-04-05T10:00:01.000Z',
+          requestedStartDate: '2025-01-01',
+          requestedEndDate: '2026-04-05',
+          reconcileDays: 45,
+          resources: []
+        };
+      }
+    }
+  });
+
+  const req = createMockReq({
+    method: 'POST',
+    body: {
+      start_date: '2025-01-01',
+      end_date: '2026-04-05',
+      reconcile_days: 45
+    }
+  });
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.deepEqual(capturedOptions, {
+    startDate: '2025-01-01',
+    endDate: '2026-04-05',
+    reconcileDays: 45
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.reconcileDays, 45);
+});
+
+test('monthly balance report aggregates entries from Mongo and excludes transfers from net', async () => {
+  const { getMonthlyBalanceReport } = loadTsModule('lib/toshlSync.ts', {
+    './toshl': {
+      todayIsoDate: () => '2026-04-05'
+    }
+  });
+
+  const report = await getMonthlyBalanceReport({
+    collection(name) {
+      assert.equal(name, 'toshl_entries');
+      return {
+        find(query) {
+          assert.deepEqual(query, {
+            date: { $gte: '2025-01-01', $lte: '2025-02-28' },
+            is_deleted: { $ne: true }
+          });
+          return {
+            sort() {
+              return {
+                toArray: async () => [
+                  {
+                    date: '2025-01-05',
+                    entry_type: 'income',
+                    amount_eur: 1000
+                  },
+                  {
+                    date: '2025-01-12',
+                    entry_type: 'expense',
+                    amount_eur: -250
+                  },
+                  {
+                    date: '2025-01-20',
+                    entry_type: 'transaction',
+                    amount_eur: -800
+                  },
+                  {
+                    date: '2025-02-10',
+                    entry_type: 'expense',
+                    amount_eur: -100
+                  },
+                  {
+                    date: '2025-02-14',
+                    entry_type: 'income',
+                    amount_eur: 50
+                  }
+                ]
+              };
+            }
+          };
+        }
+      };
+    }
+  }, {
+    from: '2025-01-01',
+    to: '2025-02-28'
+  });
+
+  assert.equal(report.currency, 'EUR');
+  assert.equal(report.currentBalance, 700);
+  assert.equal(report.bestMonth, '2025-01');
+  assert.equal(report.worstMonth, '2025-02');
+  assert.deepEqual(report.rows, [
+    {
+      month: '2025-01',
+      income: 1000,
+      expense: 250,
+      transfer: -800,
+      net: 750,
+      balance: 750
+    },
+    {
+      month: '2025-02',
+      income: 50,
+      expense: 100,
+      transfer: 0,
+      net: -50,
+      balance: 700
+    }
+  ]);
+});
+
+test('syncStatus returns sorted sync resources and active lock state', async () => {
+  const handler = loadApiHandler('pages/api/syncStatus.ts', {
+    '../../lib/mongodb': {
+      connectToDatabase: async () => ({
+        db: {
+          collection(name) {
+            if (name === 'sync_state') {
+              return {
+                find() {
+                  return {
+                    sort() {
+                      return {
+                        toArray: async () => [
+                          { resource: 'accounts', last_successful_to: '2026-04-05' },
+                          { resource: 'entries', last_successful_to: '2026-04-05' }
+                        ]
+                      };
+                    }
+                  };
+                }
+              };
+            }
+
+            if (name === 'sync_locks') {
+              return {
+                findOne: async (query) => {
+                  assert.equal(query.key, 'toshl-full-sync');
+                  assert.equal(query.expires_at.$gt instanceof Date, true);
+                  return { key: 'toshl-full-sync' };
+                }
+              };
+            }
+
+            throw new Error(`Unexpected collection ${name}`);
+          }
+        }
+      })
+    }
+  });
+
+  const req = createMockReq({ method: 'GET' });
+  const res = createMockRes();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    resources: [
+      { resource: 'accounts', last_successful_to: '2026-04-05' },
+      { resource: 'entries', last_successful_to: '2026-04-05' }
+    ],
+    active_sync: true
+  });
 });

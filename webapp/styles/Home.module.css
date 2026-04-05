@@ -183,6 +183,14 @@
   color: #666;
 }
 
+.syncMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  color: #555;
+}
+
 .emptyState {
   text-align: center;
   padding: 2rem;

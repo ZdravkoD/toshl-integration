@@ -15,7 +15,7 @@ function compileTypeScript(filePath) {
   }).outputText;
 }
 
-function loadApiHandler(relativePath, mocks = {}) {
+function loadTsModule(relativePath, mocks = {}) {
   const filePath = path.resolve(__dirname, '..', '..', relativePath);
   const compiled = compileTypeScript(filePath);
   const module = { exports: {} };
@@ -50,7 +50,12 @@ function loadApiHandler(relativePath, mocks = {}) {
 
   wrapped(localRequire, module, module.exports, filePath, dirname);
 
-  return module.exports.default || module.exports;
+  return module.exports;
+}
+
+function loadApiHandler(relativePath, mocks = {}) {
+  const loadedModule = loadTsModule(relativePath, mocks);
+  return loadedModule.default || loadedModule;
 }
 
 function createMockReq(overrides = {}) {
@@ -80,5 +85,6 @@ function createMockRes() {
 module.exports = {
   createMockReq,
   createMockRes,
-  loadApiHandler
+  loadApiHandler,
+  loadTsModule
 };

@@ -14,9 +14,26 @@ interface PendingTransaction {
   processed?: boolean;
 }
 
+interface SyncResourceState {
+  resource: string;
+  last_successful_to?: string;
+  last_successful_from?: string;
+  updated_at?: string;
+}
+
+interface SyncStatusResponse {
+  resources: SyncResourceState[];
+  active_sync: boolean;
+}
+
 export default function Home() {
   const router = useRouter();
   const [pendingTransactions, setPendingTransactions] = useState<PendingTransaction[]>([]);
+  const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
+  const [syncStartDate, setSyncStartDate] = useState('2025-01-01');
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('');
+  const [syncError, setSyncError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -27,6 +44,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchPendingTransactions();
+    fetchSyncStatus();
   }, []);
 
   const fetchPendingTransactions = async () => {
@@ -48,6 +66,60 @@ export default function Home() {
     }
   };
 
+  const fetchSyncStatus = async () => {
+    try {
+      const response = await fetch('/api/syncStatus');
+      const data = await response.json();
+
+      if (response.ok) {
+        setSyncStatus(data);
+      } else {
+        setSyncError(data.error || 'Failed to fetch sync status');
+      }
+    } catch (_err) {
+      setSyncError('Network error: Failed to fetch sync status');
+    }
+  };
+
+  const runToshlSync = async () => {
+    setSyncing(true);
+    setSyncMessage('');
+    setSyncError('');
+
+    try {
+      const response = await fetch('/api/syncToshl', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          start_date: syncStartDate
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setSyncError(data.error || 'Failed to sync Toshl data');
+        return;
+      }
+
+      const entryResource = (data.resources || []).find((resource: { resource: string }) => resource.resource === 'entries');
+      setSyncMessage(
+        entryResource
+          ? `Sync completed. Entries fetched: ${entryResource.fetched}, updated: ${entryResource.modified + entryResource.upserted}, deleted: ${entryResource.deleted}.`
+          : 'Sync completed successfully.'
+      );
+
+      await fetchSyncStatus();
+    } catch (_err) {
+      setSyncError('Network error: Failed to sync Toshl data');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const lastEntriesSync = syncStatus?.resources?.find(resource => resource.resource === 'entries');
+
   return (
     <div className={styles.container}>
       <main className={styles.main}>
@@ -65,6 +137,9 @@ export default function Home() {
           </button>
           <button className={`${styles.navButton} ${styles.secondary}`} onClick={() => router.push('/merchants')}>
             Manage Mappings
+          </button>
+          <button className={`${styles.navButton} ${styles.secondary}`} onClick={() => router.push('/reports/monthly-balance')}>
+            Monthly Balance Report
           </button>
         </nav>
 
@@ -131,6 +206,73 @@ export default function Home() {
               disabled={loading}
             >
               {loading ? 'Refreshing...' : 'Refresh Pending'}
+            </button>
+            <button
+              className={styles.button}
+              onClick={() => router.push('/reports/monthly-balance')}
+            >
+              Open Monthly Balance Report
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.card}>
+          <h2 className={styles.cardTitle}>Toshl Mirror Sync</h2>
+
+          {syncMessage && (
+            <div className={`${styles.message} ${styles.success}`}>
+              {syncMessage}
+            </div>
+          )}
+
+          {syncError && (
+            <div className={`${styles.message} ${styles.error}`}>
+              {syncError}
+            </div>
+          )}
+
+          <div className={styles.form}>
+            <div className={styles.formGroup}>
+              <label className={styles.label} htmlFor="sync-start-date">
+                Backfill Start Date
+              </label>
+              <input
+                id="sync-start-date"
+                className={styles.input}
+                type="date"
+                value={syncStartDate}
+                onChange={(event) => setSyncStartDate(event.target.value)}
+              />
+            </div>
+
+            <div className={styles.syncMeta}>
+              <div>
+                Active sync: <strong>{syncStatus?.active_sync ? 'Yes' : 'No'}</strong>
+              </div>
+              <div>
+                Last entry sync window:{' '}
+                <strong>
+                  {lastEntriesSync?.last_successful_from && lastEntriesSync?.last_successful_to
+                    ? `${lastEntriesSync.last_successful_from} to ${lastEntriesSync.last_successful_to}`
+                    : 'Not synced yet'}
+                </strong>
+              </div>
+            </div>
+
+            <button
+              className={styles.button}
+              onClick={runToshlSync}
+              disabled={syncing || syncStatus?.active_sync}
+            >
+              {syncing ? 'Syncing...' : 'Sync Toshl Mirror'}
+            </button>
+
+            <button
+              className={styles.button}
+              onClick={fetchSyncStatus}
+              disabled={syncing}
+            >
+              Refresh Sync Status
             </button>
           </div>
         </div>
