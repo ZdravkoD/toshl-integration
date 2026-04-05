@@ -988,6 +988,93 @@ test('sync mirror ignores reconciliation category entries', async () => {
   assert.equal(entryDeleteQuery.$and[1].$or[1].category_id, 'reconciliation');
 });
 
+test('sync mirror stores entry amounts normalized to EUR', async () => {
+  const { syncToshlMirror } = loadTsModule('lib/toshlSync.ts', {
+    './toshl': {
+      fetchToshlCollection: async (path) => {
+        if (path === '/accounts') {
+          return [{ id: 'acc-1', name: 'Cash', currency: { code: 'EUR' } }];
+        }
+
+        if (path === '/categories') {
+          return [{ id: 'cat-1', name: 'General', type: 'expense' }];
+        }
+
+        if (path === '/tags') {
+          return [];
+        }
+
+        if (path === '/entries') {
+          return [
+            {
+              id: 'entry-bgn',
+              amount: -100,
+              date: '2026-04-05',
+              currency: { code: 'BGN', rate: 0.511, main_rate: 0.511 },
+              account: 'acc-1',
+              category: 'cat-1'
+            }
+          ];
+        }
+
+        throw new Error(`Unexpected path ${path}`);
+      },
+      todayIsoDate: () => '2026-04-05'
+    }
+  });
+
+  let capturedEntryUpdate;
+
+  const db = {
+    collection(name) {
+      if (name === 'sync_locks') {
+        return {
+          createIndex: async () => {},
+          deleteMany: async () => {},
+          insertOne: async () => {},
+          deleteOne: async () => {}
+        };
+      }
+
+      if (name === 'sync_state') {
+        return {
+          createIndex: async () => {},
+          findOne: async () => null,
+          updateOne: async () => ({})
+        };
+      }
+
+      if (name === 'toshl_entries') {
+        return {
+          createIndex: async () => {},
+          updateOne: async (_filter, update) => {
+            capturedEntryUpdate = update;
+            return { upsertedCount: 1, modifiedCount: 0 };
+          },
+          deleteMany: async () => ({ deletedCount: 0 })
+        };
+      }
+
+      return {
+        createIndex: async () => {},
+        updateOne: async () => ({ upsertedCount: 1, modifiedCount: 0 }),
+        deleteMany: async () => ({ deletedCount: 0 })
+      };
+    }
+  };
+
+  await syncToshlMirror(db, {
+    startDate: '2026-04-01',
+    endDate: '2026-04-05'
+  });
+
+  assert.equal(capturedEntryUpdate.$set.amount, -51.1);
+  assert.equal(capturedEntryUpdate.$set.amount_eur, -51.1);
+  assert.equal(capturedEntryUpdate.$set.currency_code, 'EUR');
+  assert.equal(capturedEntryUpdate.$set.original_amount, -100);
+  assert.equal(capturedEntryUpdate.$set.original_currency_code, 'BGN');
+});
+
 test('syncStatus returns sorted sync resources and active lock state', async () => {
   const handler = loadApiHandler('pages/api/syncStatus.ts', {
     '../../lib/mongodb': {

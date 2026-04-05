@@ -111,6 +111,13 @@ function convertAmountToEur(entry: ToshlEntry) {
     return roundCurrency(amount * conversionRate);
   }
 
+  if (currencyCode && currencyCode !== 'EUR') {
+    console.warn('[toshl-sync] missing conversion rate for non-EUR entry, preserving numeric amount', {
+      entryId: entry.id,
+      currencyCode
+    });
+  }
+
   return roundCurrency(amount);
 }
 
@@ -155,8 +162,9 @@ function normalizeEntry(
   }
 ) {
   const entryType = inferEntryType(entry);
-  const amount = roundCurrency(Number(entry.amount || 0));
   const amountEur = convertAmountToEur(entry);
+  const originalAmount = roundCurrency(Number(entry.amount || 0));
+  const originalCurrencyCode = entry.currency?.code || null;
   const accountId = entry.account || null;
   const categoryId = entry.category || null;
   const tagIds = Array.isArray(entry.tags) ? entry.tags : [];
@@ -166,9 +174,11 @@ function normalizeEntry(
     date: entry.date,
     desc: entry.desc || null,
     entry_type: entryType,
-    amount,
+    amount: amountEur,
     amount_eur: amountEur,
-    currency_code: entry.currency?.code || null,
+    currency_code: 'EUR',
+    original_amount: originalAmount,
+    original_currency_code: originalCurrencyCode,
     account_id: accountId,
     account_name: accountId ? context.accountNames.get(accountId) || null : null,
     category_id: categoryId,
